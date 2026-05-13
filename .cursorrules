@@ -1,0 +1,46 @@
+# Wallet Ledger System — AI Assistant Rules
+
+You are assisting on a Wallet + Ledger + Reconciliation system. Read `docs/ERD_AND_PLAN.md` before making non-trivial changes — it is the source of truth for data model and roadmap.
+
+## Tech Stack
+- **Backend:** Java 21, Quarkus 3.15+, Hibernate ORM with Panache, RESTEasy Reactive, Flyway, PostgreSQL 15.
+- **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, React Query.
+- **Testing:** JUnit 5, Mockito, Testcontainers (mandatory for any concurrency / locking logic).
+
+## Non-negotiable Rules
+
+### Money & Ledger
+1. **Never use `float` or `double` for money.** Use `java.math.BigDecimal` in Java and `NUMERIC(19,4)` in PostgreSQL.
+2. **Double-entry invariant:** every `ledger_transaction` MUST have entries summing to zero per currency. Enforce in service + DB check.
+3. **`ledger_entries` is append-only.** No UPDATE, no DELETE. Reversals create a new transaction with mirrored entries.
+4. **Idempotency:** every mutating endpoint accepts an `idempotencyKey`. Persist it with a UNIQUE constraint and short-circuit duplicates.
+5. **Concurrency:** wallet mutations use `SELECT ... FOR UPDATE` (Pessimistic Write). For transfers between two wallets, acquire locks in ascending wallet ID order to prevent deadlock.
+
+### IDs & Types
+- `users`, `wallets` → `UUID` primary keys.
+- `ledger_*`, `reconciliation_*`, `payment_events`, `external_statements`, `audit_logs` → `BIGINT` identity.
+- Webhook payloads, statement content, reconciliation summaries → `JSONB`.
+
+### Security (OWASP-aware)
+- Validate all input with `@Valid` + Hibernate Validator at the boundary.
+- Enforce ownership (BOLA): a user can only read/mutate wallets they own. Never trust path params alone.
+- Use parameterized queries / Panache parameters — never string-concatenate SQL.
+- Never log secrets, full PANs, or full request bodies of payment webhooks.
+
+### Code Style
+- Default: no comments. Only comment WHY something non-obvious is happening (a constraint, an invariant, a workaround).
+- Don't add error handling for cases that can't happen. Trust framework guarantees.
+- Don't introduce abstractions for hypothetical future requirements.
+- Prefer editing existing files over creating new ones.
+- Frontend: laptop-first density. Tables should be information-dense, not airy. Side-by-side layouts for reconciliation screens.
+
+### Migrations
+- All schema changes go through Flyway (`backend/src/main/resources/db/migration/V{n}__{name}.sql`). Never edit a migration once committed — add a new one.
+
+### Testing
+- Any code touching wallet balance or ledger entries requires a Testcontainers-backed test that exercises concurrent access.
+- Idempotency: every mutating endpoint has a test that calls it twice with the same key and asserts state is unchanged on the second call.
+
+## Workflow Expectations
+- Reference `docs/ERD_AND_PLAN.md` phases (A/B/C) when proposing work — call out which phase a change belongs to.
+- Run `./mvnw test` (backend) and `npm run build` (frontend) before declaring a task complete.
