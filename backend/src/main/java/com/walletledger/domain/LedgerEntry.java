@@ -25,7 +25,7 @@ public class LedgerEntry extends PanacheEntityBase {
     @Column(nullable = false, precision = 19, scale = 4)
     public BigDecimal amount;
 
-    @Column(nullable = false, length = 3)
+    @Column(nullable = false, columnDefinition = "CHAR(3)")
     public String currency;
 
     @Column(length = 128)
