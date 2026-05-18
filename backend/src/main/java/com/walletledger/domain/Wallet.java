@@ -27,7 +27,7 @@ public class Wallet extends PanacheEntityBase {
     @Column(name = "reserved_balance", nullable = false, precision = 19, scale = 4)
     public BigDecimal reservedBalance = BigDecimal.ZERO;
 
-    @Column(nullable = false, columnDefinition = "CHAR(3)")
+    @Column(nullable = false, length = 3)
     public String currency;
 
     @Column(nullable = false, length = 32)
