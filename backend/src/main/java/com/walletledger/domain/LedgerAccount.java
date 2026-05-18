@@ -18,7 +18,8 @@ public class LedgerAccount extends PanacheEntityBase {
     @Column(nullable = false, length = 32)
     public String type;
 
-    @Column(columnDefinition = "jsonb")
+    @Column(columnDefinition = "jsonb", insertable = true, updatable = true)
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
     public String metadata;
 
     @Column(name = "created_at", nullable = false)
