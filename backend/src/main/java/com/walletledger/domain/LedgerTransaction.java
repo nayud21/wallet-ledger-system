@@ -21,6 +21,9 @@ public class LedgerTransaction extends PanacheEntityBase {
     @Column(length = 512)
     public String description;
 
+    @Column(name = "request_hash", length = 64)
+    public String requestHash;
+
     @Column(name = "created_at", nullable = false)
     public Instant createdAt = Instant.now();
 }

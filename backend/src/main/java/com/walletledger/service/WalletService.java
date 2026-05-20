@@ -2,10 +2,11 @@ package com.walletledger.service;
 
 import com.walletledger.domain.*;
 import com.walletledger.dto.*;
+import com.walletledger.exception.*;
 import com.walletledger.repository.*;
+import com.walletledger.util.RequestHasher;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
-import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import java.time.Instant;
@@ -45,6 +46,12 @@ public class WalletService {
 
     @Transactional
     public WalletResponse topUp(TopUpRequest req) {
+        String hash = RequestHasher.hash(req.walletId().toString(), req.amount().toPlainString(), req.currency().toUpperCase());
+        ledgerTxRepo.findByIdempotencyKey(req.idempotencyKey()).ifPresent(existing -> {
+            if (existing.requestHash != null && !existing.requestHash.equals(hash)) {
+                throw new IdempotencyConflictException(req.idempotencyKey());
+            }
+        });
         if (ledgerTxRepo.findByIdempotencyKey(req.idempotencyKey()).isPresent()) {
             Wallet wallet = walletRepo.findByIdOptional(req.walletId())
                 .orElseThrow(() -> new NotFoundException("Wallet not found: " + req.walletId()));
@@ -55,10 +62,10 @@ public class WalletService {
             .orElseThrow(() -> new NotFoundException("Wallet not found: " + req.walletId()));
 
         if (!"ACTIVE".equals(wallet.status)) {
-            throw new BadRequestException("Wallet is not active");
+            throw new WalletNotActiveException(wallet.id, wallet.status);
         }
         if (!wallet.currency.equals(req.currency().toUpperCase())) {
-            throw new BadRequestException("Currency mismatch: wallet is " + wallet.currency);
+            throw new CurrencyMismatchException(wallet.currency, req.currency().toUpperCase());
         }
 
         LedgerAccount settlement = ledgerAccountRepo.findByName("SETTLEMENT_ASSET")
@@ -69,6 +76,7 @@ public class WalletService {
         LedgerTransaction tx = new LedgerTransaction();
         tx.idempotencyKey = req.idempotencyKey();
         tx.description = "TOP_UP:" + wallet.id;
+        tx.requestHash = hash;
         ledgerTxRepo.persist(tx);
 
         // Double-entry: asset side (DEBIT settlement = money enters system), liability side (CREDIT wallet)
@@ -85,8 +93,16 @@ public class WalletService {
     @Transactional
     public TransferResponse transfer(TransferRequest req) {
         if (req.fromWalletId().equals(req.toWalletId())) {
-            throw new BadRequestException("Cannot transfer to the same wallet");
+            throw new jakarta.ws.rs.BadRequestException("Cannot transfer to the same wallet");
         }
+
+        String hash = RequestHasher.hash(req.fromWalletId().toString(), req.toWalletId().toString(),
+            req.amount().toPlainString(), req.currency().toUpperCase());
+        ledgerTxRepo.findByIdempotencyKey(req.idempotencyKey()).ifPresent(existing -> {
+            if (existing.requestHash != null && !existing.requestHash.equals(hash)) {
+                throw new IdempotencyConflictException(req.idempotencyKey());
+            }
+        });
 
         if (ledgerTxRepo.findByIdempotencyKey(req.idempotencyKey()).isPresent()) {
             Wallet from = walletRepo.findByIdOptional(req.fromWalletId())
@@ -110,15 +126,13 @@ public class WalletService {
         Wallet from = req.fromWalletId().equals(firstId) ? first : second;
         Wallet to   = req.fromWalletId().equals(firstId) ? second : first;
 
-        if (!"ACTIVE".equals(from.status) || !"ACTIVE".equals(to.status)) {
-            throw new BadRequestException("Both wallets must be ACTIVE");
-        }
+        if (!"ACTIVE".equals(from.status)) throw new WalletNotActiveException(from.id, from.status);
+        if (!"ACTIVE".equals(to.status)) throw new WalletNotActiveException(to.id, to.status);
         String currency = req.currency().toUpperCase();
-        if (!from.currency.equals(currency) || !to.currency.equals(currency)) {
-            throw new BadRequestException("Currency mismatch");
-        }
+        if (!from.currency.equals(currency)) throw new CurrencyMismatchException(from.currency, currency);
+        if (!to.currency.equals(currency)) throw new CurrencyMismatchException(to.currency, currency);
         if (from.availableBalance.compareTo(req.amount()) < 0) {
-            throw new BadRequestException("Insufficient balance");
+            throw new InsufficientBalanceException(currency, from.availableBalance, req.amount());
         }
 
         LedgerAccount fromAccount = ledgerAccountRepo.findByIdOptional(from.ledgerAccountId)
@@ -129,6 +143,7 @@ public class WalletService {
         LedgerTransaction tx = new LedgerTransaction();
         tx.idempotencyKey = req.idempotencyKey();
         tx.description = "TRANSFER:" + from.id + "->" + to.id;
+        tx.requestHash = hash;
         ledgerTxRepo.persist(tx);
 
         // DEBIT source liability (we owe source wallet less), CREDIT target liability (we owe target wallet more)

@@ -1,5 +1,6 @@
 package com.walletledger.api;
 
+import com.walletledger.domain.Wallet;
 import com.walletledger.dto.*;
 import com.walletledger.repository.WalletRepository;
 import com.walletledger.service.WalletService;
@@ -35,13 +36,26 @@ public class WalletResource {
 
     @POST
     @Path("/top-up")
-    public WalletResponse topUp(@Valid TopUpRequest req) {
+    public WalletResponse topUp(@Valid TopUpRequest req,
+                                @HeaderParam("X-User-Id") UUID callerId) {
+        assertOwner(req.walletId(), callerId);
         return walletService.topUp(req);
     }
 
     @POST
     @Path("/transfer")
-    public TransferResponse transfer(@Valid TransferRequest req) {
+    public TransferResponse transfer(@Valid TransferRequest req,
+                                     @HeaderParam("X-User-Id") UUID callerId) {
+        assertOwner(req.fromWalletId(), callerId);
         return walletService.transfer(req);
+    }
+
+    private void assertOwner(UUID walletId, UUID callerId) {
+        if (callerId == null) return; // header absent → unauthenticated; defer to future auth layer
+        Wallet wallet = walletRepo.findByIdOptional(walletId)
+            .orElseThrow(() -> new NotFoundException("Wallet not found: " + walletId));
+        if (!callerId.equals(wallet.userId)) {
+            throw new ForbiddenException("Wallet does not belong to caller");
+        }
     }
 }

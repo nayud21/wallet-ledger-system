@@ -3,7 +3,10 @@ package com.walletledger.service;
 import com.walletledger.domain.*;
 import com.walletledger.dto.LedgerTransactionResponse;
 import com.walletledger.dto.ReversalRequest;
+import com.walletledger.exception.AlreadyReversedException;
+import com.walletledger.exception.IdempotencyConflictException;
 import com.walletledger.repository.*;
+import com.walletledger.util.RequestHasher;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.NotFoundException;
@@ -23,20 +26,28 @@ public class LedgerService {
 
     @Transactional
     public LedgerTransactionResponse reverse(ReversalRequest req) {
-        LedgerTransaction existing = ledgerTxRepo.findByIdempotencyKey(req.idempotencyKey())
-            .orElse(null);
+        String hash = RequestHasher.hash(String.valueOf(req.ledgerTransactionId()), req.reason());
+        LedgerTransaction existing = ledgerTxRepo.findByIdempotencyKey(req.idempotencyKey()).orElse(null);
         if (existing != null) {
+            if (existing.requestHash != null && !existing.requestHash.equals(hash)) {
+                throw new IdempotencyConflictException(req.idempotencyKey());
+            }
             return LedgerTransactionResponse.from(existing);
         }
 
         LedgerTransaction original = ledgerTxRepo.findByIdOptional(req.ledgerTransactionId())
             .orElseThrow(() -> new NotFoundException("Transaction not found: " + req.ledgerTransactionId()));
 
+        if (original.description != null && original.description.startsWith("REVERSAL:")) {
+            throw new AlreadyReversedException(original.id);
+        }
+
         List<LedgerEntry> originalEntries = ledgerEntryRepo.findByTxId(original.id);
 
         LedgerTransaction reversal = new LedgerTransaction();
         reversal.idempotencyKey = req.idempotencyKey();
         reversal.description = "REVERSAL:" + original.id + ":" + req.reason();
+        reversal.requestHash = hash;
         ledgerTxRepo.persist(reversal);
 
         for (LedgerEntry orig : originalEntries) {

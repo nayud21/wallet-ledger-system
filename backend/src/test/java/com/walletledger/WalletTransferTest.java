@@ -86,7 +86,7 @@ class WalletTransferTest {
         .when()
             .post("/api/v1/wallets/transfer")
         .then()
-            .statusCode(400);
+            .statusCode(422);
     }
 
     @Test
