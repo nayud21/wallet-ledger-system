@@ -4,6 +4,7 @@ import com.walletledger.domain.Wallet;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.LockModeType;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -16,5 +17,9 @@ public class WalletRepository implements PanacheRepositoryBase<Wallet, UUID> {
 
     public Optional<Wallet> findByLedgerAccountId(Long ledgerAccountId) {
         return find("ledgerAccountId", ledgerAccountId).firstResultOptional();
+    }
+
+    public List<Wallet> findByUserId(UUID userId) {
+        return list("userId", userId);
     }
 }

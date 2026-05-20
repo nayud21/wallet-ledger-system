@@ -2,6 +2,7 @@ package com.walletledger.api;
 
 import com.walletledger.domain.Wallet;
 import com.walletledger.dto.*;
+import com.walletledger.repository.LedgerEntryRepository;
 import com.walletledger.repository.WalletRepository;
 import com.walletledger.service.WalletService;
 import jakarta.validation.Valid;
@@ -9,6 +10,7 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import lombok.RequiredArgsConstructor;
+import java.util.List;
 import java.util.UUID;
 
 @Path("/api/v1/wallets")
@@ -19,6 +21,15 @@ public class WalletResource {
 
     private final WalletService walletService;
     private final WalletRepository walletRepo;
+    private final LedgerEntryRepository ledgerEntryRepo;
+
+    @GET
+    public List<WalletResponse> list(@QueryParam("userId") UUID userId) {
+        if (userId != null) {
+            return walletRepo.findByUserId(userId).stream().map(WalletResponse::from).toList();
+        }
+        return walletRepo.listAll().stream().map(WalletResponse::from).toList();
+    }
 
     @POST
     public Response create(@Valid CreateWalletRequest req) {
@@ -48,6 +59,18 @@ public class WalletResource {
                                      @HeaderParam("X-User-Id") UUID callerId) {
         assertOwner(req.fromWalletId(), callerId);
         return walletService.transfer(req);
+    }
+
+    @GET
+    @Path("/{id}/entries")
+    public List<LedgerEntryResponse> getEntries(@PathParam("id") UUID id) {
+        Wallet wallet = walletRepo.findByIdOptional(id)
+            .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
+        if (wallet.ledgerAccountId == null) {
+            return List.of();
+        }
+        return ledgerEntryRepo.findByLedgerAccountId(wallet.ledgerAccountId)
+            .stream().map(LedgerEntryResponse::from).toList();
     }
 
     private void assertOwner(UUID walletId, UUID callerId) {
