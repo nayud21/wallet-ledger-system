@@ -202,3 +202,5 @@ erDiagram
 **Sprint 3 (Weeks 5–6): Reconciliation engine & admin workspace.** CSV upload endpoint, matching algorithm, exception queue. Admin screen with side-by-side compare (ledger vs. statement).
 
 **Sprint 4 (Weeks 7–8): Background jobs, AI tooling, DevOps.** Webhook inbox pattern. Husky pre-push hooks plus AI-assisted review (Claude Code / Copilot). README polish.
+
+**Sprint 5–6 (Weeks 9–12): User-facing app (Phase E).** JWT auth, BOLA enforcement, user-scoped endpoints, consumer UI (dashboard, send money, transaction history). See [`docs/plans/PHASE_E_user_facing.md`](plans/PHASE_E_user_facing.md).

@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1440" />
+<title>MyWallet — Admin</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Geist', 'ui-sans-serif', 'system-ui'],
+          mono: ['Geist Mono', 'ui-monospace', 'monospace'],
+        },
+        fontSize: {
+          // tighten defaults a bit for dense admin UI
+          xs:  ['11px', { lineHeight: '16px' }],
+          sm:  ['12.5px', { lineHeight: '18px' }],
+          base:['14px', { lineHeight: '20px' }],
+        }
+      }
+    }
+  }
+</script>
+<style>
+  html, body { background: #f8fafc; }
+  body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; color: #0f172a; -webkit-font-smoothing: antialiased; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  /* Focus rings — visible, accessible */
+  :where(button, a, input, select, textarea, [tabindex]):focus { outline: none; }
+  :where(button, a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid #4f46e5;
+    outline-offset: 1px;
+    border-radius: 4px;
+  }
+  /* Subtle row hover */
+  .row-hover:hover { background: #f8fafc; }
+  /* Custom scrollbar for the prototype shell */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+  /* Drawer animation */
+  @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+  .drawer-enter { animation: slideInRight 240ms cubic-bezier(.2,.7,.2,1) both; }
+  /* Caret for selects */
+  .select-caret {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%2364748b' stroke-width='1.5'%3E%3Cpath d='M3 4.5l3 3 3-3'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 12px;
+    padding-right: 26px;
+    appearance: none;
+  }
+  /* Route divider */
+  .route-divider {
+    position: relative;
+    height: 1px;
+    background: linear-gradient(to right, transparent, #e2e8f0 12%, #e2e8f0 88%, transparent);
+  }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect, useRef, useCallback } = React;
+
+/* ---------- Helpers ---------- */
+const fmtMoney = (n, opts = {}) =>
+  new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+    ...opts,
+  }).format(n);
+
+const fmtTs = (d) => {
+  // "2026-05-18 14:23:07 UTC"
+  const pad = (x) => String(x).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`;
+};
+
+const uuid = () => {
+  // RFC4122-ish v4
+  const hex = (n) => Math.floor(Math.random()*16**n).toString(16).padStart(n,'0');
+  return `${hex(8)}-${hex(4)}-4${hex(3)}-${(8+Math.floor(Math.random()*4)).toString(16)}${hex(3)}-${hex(12)}`;
+};
+
+/* ---------- Icons (minimal inline) ---------- */
+const Icon = {
+  Wallet: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M2 5.5a2 2 0 012-2h8.5v9.5a1 1 0 01-1 1H4a2 2 0 01-2-2v-6.5z"/><path d="M2.5 4.5h9"/><circle cx="11.5" cy="9" r=".9" fill="currentColor" stroke="none"/></svg>),
+  Ledger: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="2" width="10" height="12" rx="1"/><path d="M5.5 5h5M5.5 8h5M5.5 11h3"/></svg>),
+  Inbox: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M2 9.5l1.5-5A1 1 0 014.5 4h7a1 1 0 011 .5l1.5 5"/><path d="M2 9.5V13a1 1 0 001 1h10a1 1 0 001-1V9.5h-3.5l-1 1.5h-3l-1-1.5H2z"/></svg>),
+  Recon: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 4h6m0 0L7 2m2 2L7 6"/><path d="M13 12H7m0 0l2-2m-2 2l2 2"/></svg>),
+  Plus: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" {...p}><path d="M8 3.5v9M3.5 8h9"/></svg>),
+  Chevron: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M4 6l4 4 4-4"/></svg>),
+  ChevronRight: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M6 4l4 4-4 4"/></svg>),
+  Refresh: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M13.5 8a5.5 5.5 0 11-1.7-3.95"/><path d="M13.5 2.5V5h-2.5"/></svg>),
+  Search: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3"/></svg>),
+  Calendar: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="2.5" y="3.5" width="11" height="10" rx="1"/><path d="M2.5 6.5h11M5.5 2.5v2M10.5 2.5v2"/></svg>),
+  Close: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" {...p}><path d="M4 4l8 8M12 4l-8 8"/></svg>),
+  Filter: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M2.5 3.5h11l-4 5v4l-3 1.5v-5.5l-4-5z"/></svg>),
+  ArrowDown: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 3v10M4 9l4 4 4-4"/></svg>),
+  ArrowUp: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 13V3M4 7l4-4 4 4"/></svg>),
+  Link: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M7 9l-2 2a2.5 2.5 0 01-3.5-3.5l2-2"/><path d="M9 7l2-2a2.5 2.5 0 013.5 3.5l-2 2"/><path d="M6 10l4-4"/></svg>),
+  Warn: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 2l6 11H2L8 2z"/><path d="M8 6.5v3"/><circle cx="8" cy="11.2" r=".5" fill="currentColor" stroke="none"/></svg>),
+  Check: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>),
+  Reverse: (p) => (<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 8a5 5 0 019.2-2.7"/><path d="M12.5 3v3h-3"/><path d="M13 8a5 5 0 01-9.2 2.7"/><path d="M3.5 13v-3h3"/></svg>),
+};
+
+/* ---------- Primitives ---------- */
+const Badge = ({ tone='slate', dot, children }) => {
+  const tones = {
+    slate: 'bg-slate-100 text-slate-700',
+    green: 'bg-emerald-50 text-emerald-700',
+    red:   'bg-red-50 text-red-700',
+    amber: 'bg-amber-50 text-amber-800',
+    indigo:'bg-indigo-50 text-indigo-700',
+  };
+  const dots = {
+    slate: 'bg-slate-400', green: 'bg-emerald-500', red: 'bg-red-500',
+    amber: 'bg-amber-500', indigo: 'bg-indigo-500',
+  };
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[11px] font-medium ${tones[tone]}`}>
+      {dot && <span className={`w-1.5 h-1.5 rounded-full ${dots[tone]}`}/>}
+      {children}
+    </span>
+  );
+};
+
+const Btn = ({ variant='primary', size='sm', children, className='', ...rest }) => {
+  const sizes = {
+    xs: 'h-6 px-2 text-[11px]',
+    sm: 'h-7 px-2.5 text-xs',
+    md: 'h-8 px-3 text-sm',
+  };
+  const variants = {
+    primary: 'bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600',
+    secondary: 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200',
+    ghost: 'bg-transparent text-slate-600 hover:bg-slate-100 border border-transparent',
+    danger: 'bg-red-600 text-white hover:bg-red-700 border border-red-600',
+    'danger-outline': 'bg-white text-red-600 hover:bg-red-50 border border-red-200',
+  };
+  return (
+    <button className={`inline-flex items-center gap-1.5 rounded font-medium transition-colors ${sizes[size]} ${variants[variant]} ${className}`} {...rest}>
+      {children}
+    </button>
+  );
+};
+
+const Input = React.forwardRef(({ className='', ...rest }, ref) => (
+  <input
+    ref={ref}
+    className={`h-7 w-full px-2 text-xs bg-white border border-slate-200 rounded focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-400 num ${className}`}
+    {...rest}
+  />
+));
+
+const Label = ({ children, hint }) => (
+  <div className="flex items-center justify-between mb-1">
+    <label className="text-[11px] font-medium text-slate-600 uppercase tracking-wide">{children}</label>
+    {hint && <span className="text-[10px] text-slate-400">{hint}</span>}
+  </div>
+);
+
+const Card = ({ children, className='' }) => (
+  <div className={`bg-white border border-slate-200 rounded-md ${className}`}>{children}</div>
+);
+
+const SectionHead = ({ title, right, sub }) => (
+  <div className="flex items-end justify-between mb-2">
+    <div>
+      <div className="text-sm font-semibold text-slate-800">{title}</div>
+      {sub && <div className="text-[11px] text-slate-500 mt-0.5">{sub}</div>}
+    </div>
+    {right}
+  </div>
+);
+
+/* ---------- Mock data ---------- */
+const now = new Date('2026-05-20T15:18:02Z');
+const minutesAgo = (m) => new Date(now.getTime() - m*60000);
+
+const WALLETS = [
+  { id: 'wlt_8f3a1c',  ext: 'usr_42061_main',      cur: 'USD', avail: 12480.5300, reserved:   320.0000, status: 'ACTIVE', updated: minutesAgo(2) },
+  { id: 'wlt_9e22b0',  ext: 'usr_42061_savings',   cur: 'USD', avail:  4250.0000, reserved:     0.0000, status: 'ACTIVE', updated: minutesAgo(14) },
+  { id: 'wlt_aa17d9',  ext: 'usr_38112_eur',       cur: 'EUR', avail: 22189.4750, reserved:  1500.0000, status: 'ACTIVE', updated: minutesAgo(31) },
+  { id: 'wlt_bd4c20',  ext: 'usr_38112_payouts',   cur: 'USD', avail:     0.0000, reserved:     0.0000, status: 'FROZEN',  updated: minutesAgo(420) },
+  { id: 'wlt_c91e54',  ext: 'merchant_grove_co',   cur: 'USD', avail:198432.8801, reserved: 42000.0000, status: 'ACTIVE', updated: minutesAgo(1) },
+  { id: 'wlt_d033fa',  ext: 'merchant_amaro_inc',  cur: 'GBP', avail: 67901.2200, reserved:   210.5000, status: 'ACTIVE', updated: minutesAgo(8) },
+  { id: 'wlt_e58721',  ext: 'usr_55491_trial',     cur: 'USD', avail:    49.9999, reserved:     0.0000, status: 'ACTIVE', updated: minutesAgo(62) },
+  { id: 'wlt_f1a3c8',  ext: 'usr_55491_main',      cur: 'USD', avail:   875.1100, reserved:    25.0000, status: 'ACTIVE', updated: minutesAgo(180) },
+  { id: 'wlt_010bb2',  ext: 'usr_99020_holdings',  cur: 'JPY', avail:1284311.0000, reserved:     0.0000, status: 'FROZEN',  updated: minutesAgo(1440) },
+  { id: 'wlt_127c8d',  ext: 'usr_70218_main',      cur: 'USD', avail:  3308.0000, reserved:     0.0000, status: 'ACTIVE', updated: minutesAgo(220) },
+];
+
+const SNAPSHOTS = [
+  { tx: 'tx_4ab17c98', balance: 12480.5300, ts: minutesAgo(2) },
+  { tx: 'tx_4a8e2210', balance: 11980.5300, ts: minutesAgo(45) },
+  { tx: 'tx_4a5b71d9', balance: 12480.5300, ts: minutesAgo(120) },
+  { tx: 'tx_4a2c0814', balance: 12230.5300, ts: minutesAgo(360) },
+  { tx: 'tx_49ff1a05', balance: 12530.5300, ts: minutesAgo(720) },
+  { tx: 'tx_49d80b8a', balance: 12750.0000, ts: minutesAgo(1440) },
+];
+
+const ENTRIES = [
+  { tx: 'tx_4ab17c98', desc: 'Top-up via Stripe checkout',           dir: 'CREDIT', amount: 500.0000, ts: minutesAgo(2) },
+  { tx: 'tx_4a8e2210', desc: 'Transfer to wlt_c91e54 (grove_co)',    dir: 'DEBIT',  amount: 500.0000, ts: minutesAgo(45) },
+  { tx: 'tx_4a5b71d9', desc: 'Refund — order #A-77182',              dir: 'CREDIT', amount: 250.0000, ts: minutesAgo(120) },
+  { tx: 'tx_4a2c0814', desc: 'Payout to merchant_amaro_inc',         dir: 'DEBIT',  amount: 300.0000, ts: minutesAgo(360) },
+  { tx: 'tx_49ff1a05', desc: 'Top-up via ACH (Plaid)',               dir: 'CREDIT', amount: 220.0000, ts: minutesAgo(720) },
+  { tx: 'tx_49d80b8a', desc: 'Fee — monthly retention',              dir: 'DEBIT',  amount:   2.5000, ts: minutesAgo(1440) },
+];
+
+const LEDGER_TX = [
+  { id: 'tx_4ab17c98', desc: 'Top-up via Stripe checkout',       status: 'POSTED',   created: minutesAgo(2) },
+  { id: 'tx_4ab102e1', desc: 'Transfer wlt_8f3a1c → wlt_c91e54', status: 'POSTED',   created: minutesAgo(8) },
+  { id: 'tx_4aaf91a2', desc: 'Fee — interchange',                status: 'POSTED',   created: minutesAgo(17) },
+  { id: 'tx_4aae0048', desc: 'Refund — order #A-77182',          status: 'POSTED',   created: minutesAgo(31) },
+  { id: 'tx_4aabc7d9', desc: 'Top-up via ACH (Plaid)',           status: 'PENDING',  created: minutesAgo(54) },
+  { id: 'tx_4aab1080', desc: 'Payout batch B-2026-05-20',        status: 'POSTED',   created: minutesAgo(72) },
+  { id: 'tx_4aa9f31c', desc: 'Adjustment — recon write-off',     status: 'POSTED',   created: minutesAgo(96) },
+  { id: 'tx_4aa84b00', desc: 'Reversal of tx_4aa5a2c1',          status: 'REVERSED', created: minutesAgo(140) },
+  { id: 'tx_4aa5a2c1', desc: 'Top-up via Stripe checkout',       status: 'POSTED',   created: minutesAgo(180) },
+  { id: 'tx_4aa3119e', desc: 'Transfer wlt_9e22b0 → wlt_8f3a1c', status: 'POSTED',   created: minutesAgo(220) },
+  { id: 'tx_4aa10004', desc: 'Fee — wire-in',                    status: 'POSTED',   created: minutesAgo(300) },
+];
+
+const TX_ENTRIES = {
+  tx_4ab17c98: [
+    { acct: 'asset:stripe_clearing',  dir: 'DEBIT',  amount:  500.0000 },
+    { acct: 'liability:wlt_8f3a1c',   dir: 'CREDIT', amount:  500.0000 },
+  ],
+  tx_4ab102e1: [
+    { acct: 'liability:wlt_8f3a1c',   dir: 'DEBIT',  amount:  500.0000 },
+    { acct: 'liability:wlt_c91e54',   dir: 'CREDIT', amount:  500.0000 },
+  ],
+  tx_4aae0048: [
+    { acct: 'asset:stripe_clearing',  dir: 'DEBIT',  amount:  250.0000 },
+    { acct: 'liability:wlt_8f3a1c',   dir: 'CREDIT', amount:  250.0000 },
+  ],
+};
+
+/* Reconciliation data */
+const MATCHES = [
+  { id: 1,  ledger: 'tx_4ab102e1', stmt: 'STR-9911-A',  amount:  500.0000, desc: 'Stripe payout 2026-05-19', ts: minutesAgo(8) },
+  { id: 2,  ledger: 'tx_4aaf91a2', stmt: 'STR-9910-Z',  amount:    2.5000, desc: 'Interchange fee',          ts: minutesAgo(17) },
+  { id: 3,  ledger: 'tx_4aae0048', stmt: 'STR-9909-Q',  amount:  250.0000, desc: 'Refund A-77182',           ts: minutesAgo(31) },
+  { id: 4,  ledger: 'tx_4aabc7d9', stmt: 'PLD-7740-B',  amount:  220.0000, desc: 'ACH credit (Plaid)',       ts: minutesAgo(54) },
+  { id: 5,  ledger: 'tx_4aab1080', stmt: 'WSE-2026052', amount: 8400.0000, desc: 'Payout batch B-2026-05-20',ts: minutesAgo(72) },
+  { id: 6,  ledger: 'tx_4aa10004', stmt: 'WIR-0021-X',  amount:   38.0000, desc: 'Wire-in fee',              ts: minutesAgo(300) },
+];
+
+const EXCEPTIONS = [
+  {
+    type: 'UNMATCHED_LEDGER',
+    ledger: { id: 'tx_4aa5a2c1', amount: 180.0000, desc: 'Top-up via Stripe checkout', ts: minutesAgo(180) },
+    stmt: null,
+  },
+  {
+    type: 'AMOUNT_MISMATCH',
+    ledger: { id: 'tx_4aa9f31c', amount: 125.0000, desc: 'Adjustment — recon write-off', ts: minutesAgo(96) },
+    stmt:   { id: 'STR-9907-K',  amount: 123.7500, desc: 'Stripe adjustment',            ts: minutesAgo(96) },
+    diff: 1.2500,
+  },
+  {
+    type: 'UNMATCHED_STATEMENT',
+    ledger: null,
+    stmt: { id: 'PLD-7741-C', amount: 75.0000, desc: 'ACH credit (Plaid) — unknown reference', ts: minutesAgo(40) },
+  },
+];
+
+/* ---------- Shell ---------- */
+const Sidebar = ({ route, setRoute }) => {
+  const items = [
+    { key: 'wallets',   label: 'Wallets',         icon: Icon.Wallet, badge: '10' },
+    { key: 'ledger',    label: 'Ledger',          icon: Icon.Ledger, badge: '1.2k' },
+    { key: 'inbox',     label: 'Inbox',           icon: Icon.Inbox,  badge: '4' },
+    { key: 'recon',     label: 'Reconciliation',  icon: Icon.Recon,  badge: '3', badgeTone:'amber' },
+  ];
+  return (
+    <aside className="w-56 shrink-0 bg-white border-r border-slate-200 flex flex-col">
+      <div className="h-11 px-3 flex items-center gap-2 border-b border-slate-200">
+        <div className="w-6 h-6 rounded bg-gradient-to-br from-indigo-500 to-indigo-700 grid place-items-center text-white text-[11px] font-bold font-mono">M</div>
+        <div className="font-semibold text-[13px] tracking-tight">MyWallet</div>
+        <span className="ml-auto text-[10px] text-slate-400 font-mono">v2.4.1</span>
+      </div>
+      <nav className="flex-1 p-2 space-y-0.5">
+        <div className="px-2 pt-2 pb-1 text-[10px] uppercase tracking-wider text-slate-400 font-medium">Operations</div>
+        {items.map(it => {
+          const active = route.screen === it.key || (route.screen === 'wallet-detail' && it.key === 'wallets');
+          const I = it.icon;
+          return (
+            <button
+              key={it.key}
+              onClick={() => setRoute({ screen: it.key })}
+              className={`w-full flex items-center gap-2 px-2 h-7 rounded text-xs font-medium transition-colors ${active ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
+            >
+              <I className={`w-4 h-4 ${active ? 'text-indigo-600' : 'text-slate-400'}`}/>
+              <span>{it.label}</span>
+              {it.badge && (
+                <span className={`ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded ${it.badgeTone==='amber' ? 'bg-amber-100 text-amber-800' : (active ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600')}`}>{it.badge}</span>
+              )}
+            </button>
+          );
+        })}
+
+        <div className="px-2 pt-4 pb-1 text-[10px] uppercase tracking-wider text-slate-400 font-medium">Configuration</div>
+        {['Currencies','Accounts','API Keys','Webhooks'].map(l => (
+          <button key={l} className="w-full flex items-center gap-2 px-2 h-7 rounded text-xs font-medium text-slate-600 hover:bg-slate-50">
+            <span className="w-1 h-1 rounded-full bg-slate-300 ml-1.5 mr-1.5"/>
+            {l}
+          </button>
+        ))}
+      </nav>
+
+      <div className="p-2 border-t border-slate-200">
+        <div className="px-2 py-1.5 rounded bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-snug">
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"/>
+            <span className="font-medium text-slate-700">All systems normal</span>
+          </div>
+          <span className="font-mono text-[10px] text-slate-400">last check 32s ago</span>
+        </div>
+      </div>
+    </aside>
+  );
+};
+
+const TopBar = ({ route, setRoute }) => {
+  const [open, setOpen] = useState(false);
+  const operators = [
+    { name: 'Imani Okafor',    role: 'Operator',     init: 'IO', active: true },
+    { name: 'June Park',       role: 'Operator',     init: 'JP' },
+    { name: 'Dr. Tom Reilly',  role: 'Reviewer',     init: 'TR' },
+    { name: 'Service Account', role: 'API',          init: 'SA' },
+  ];
+  const current = operators.find(o => o.active);
+
+  // Breadcrumb
+  const crumbs = [];
+  if (route.screen === 'wallets')        crumbs.push({ label: 'Wallets' });
+  if (route.screen === 'wallet-detail')  crumbs.push({ label: 'Wallets', onClick: () => setRoute({ screen:'wallets' }) }, { label: route.id, mono:true });
+  if (route.screen === 'ledger')         crumbs.push({ label: 'Ledger' });
+  if (route.screen === 'recon')          crumbs.push({ label: 'Reconciliation' }, { label: 'Runs', muted:true }, { label: 'run_2026_05_20_08:00', mono:true });
+
+  return (
+    <header className="h-11 shrink-0 bg-white border-b border-slate-200 flex items-center px-4 gap-3">
+      <div className="flex items-center gap-1.5 text-xs">
+        {crumbs.map((c, i) => (
+          <React.Fragment key={i}>
+            {i>0 && <Icon.ChevronRight className="w-3 h-3 text-slate-300"/>}
+            <button
+              onClick={c.onClick}
+              className={`${c.mono ? 'font-mono text-[11px]' : ''} ${c.onClick ? 'text-slate-500 hover:text-slate-800' : 'text-slate-800 font-medium'} ${c.muted ? 'text-slate-400' : ''}`}
+            >
+              {c.label}
+            </button>
+          </React.Fragment>
+        ))}
+      </div>
+
+      <div className="ml-auto flex items-center gap-2">
+        <button className="h-7 px-2 rounded border border-slate-200 hover:bg-slate-50 text-xs text-slate-600 flex items-center gap-1.5">
+          <Icon.Search className="w-3.5 h-3.5"/>
+          <span>Search</span>
+          <span className="ml-2 font-mono text-[10px] px-1 py-0.5 bg-slate-100 rounded text-slate-500">⌘K</span>
+        </button>
+
+        <div className="relative">
+          <button
+            onClick={() => setOpen(o => !o)}
+            className="h-7 pl-1 pr-2 rounded border border-slate-200 hover:bg-slate-50 flex items-center gap-2"
+          >
+            <span className="w-5 h-5 rounded bg-slate-800 text-white text-[10px] font-semibold grid place-items-center font-mono">{current.init}</span>
+            <span className="text-xs font-medium text-slate-700">{current.name.split(' ')[0]}</span>
+            <span className="text-[10px] text-slate-400 px-1 py-0.5 rounded bg-slate-100">{current.role}</span>
+            <Icon.Chevron className="w-3 h-3 text-slate-400"/>
+          </button>
+          {open && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setOpen(false)}/>
+              <div className="absolute right-0 top-9 w-64 bg-white border border-slate-200 rounded-md py-1 z-20 shadow-sm">
+                <div className="px-3 py-2 border-b border-slate-100">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-400">Switch operator</div>
+                </div>
+                {operators.map(o => (
+                  <button key={o.name} className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-50">
+                    <span className="w-6 h-6 rounded bg-slate-800 text-white text-[10px] font-semibold grid place-items-center font-mono">{o.init}</span>
+                    <span className="text-xs text-slate-700 text-left flex-1">
+                      <div className="font-medium">{o.name}</div>
+                      <div className="text-[10px] text-slate-400">{o.role}</div>
+                    </span>
+                    {o.active && <Icon.Check className="w-3.5 h-3.5 text-indigo-600"/>}
+                  </button>
+                ))}
+                <div className="border-t border-slate-100 mt-1 pt-1">
+                  <button className="w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 text-left">Settings</button>
+                  <button className="w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 text-left">Sign out</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+};
+
+/* ---------- Screen 1: Wallets list ---------- */
+const WalletsScreen = ({ onOpen }) => {
+  const [filter, setFilter] = useState('all');
+  const filtered = WALLETS.filter(w => filter==='all' ? true : (filter==='active' ? w.status==='ACTIVE' : w.status==='FROZEN'));
+
+  return (
+    <div className="p-4 space-y-3" data-screen-label="01 Wallets list">
+      {/* Page head */}
+      <div className="flex items-end justify-between">
+        <div>
+          <div className="text-base font-semibold tracking-tight">Wallets</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">10 wallets · 4 currencies · last sync 32s ago</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex h-7 bg-white border border-slate-200 rounded overflow-hidden text-xs">
+            {[['all','All',10],['active','Active',8],['frozen','Frozen',2]].map(([k,l,n], i) => (
+              <button key={k}
+                onClick={() => setFilter(k)}
+                className={`px-2.5 h-full flex items-center gap-1.5 ${i>0?'border-l border-slate-200':''} ${filter===k ? 'bg-slate-100 text-slate-800 font-medium' : 'text-slate-600 hover:bg-slate-50'}`}>
+                {l}<span className="text-[10px] text-slate-400 num">{n}</span>
+              </button>
+            ))}
+          </div>
+          <Btn variant="secondary"><Icon.Filter className="w-3.5 h-3.5"/>Filter</Btn>
+          <Btn variant="primary"><Icon.Plus className="w-3.5 h-3.5"/>Create Wallet</Btn>
+        </div>
+      </div>
+
+      {/* KPI strip */}
+      <div className="grid grid-cols-4 gap-2">
+        {[
+          { l: 'Total available', v: '1,514,776.34', sub: 'across 4 currencies' },
+          { l: 'Total reserved',  v: '44,055.50',    sub: '6 wallets with holds' },
+          { l: 'Net inflow 24h',  v: '+ 8,420.00',   sub: 'vs −1,205.00 yesterday', tone:'green' },
+          { l: 'Frozen wallets',  v: '2',            sub: 'review queue · 1 overdue', tone:'amber' },
+        ].map(k => (
+          <Card key={k.l} className="px-3 py-2">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">{k.l}</div>
+            <div className={`mt-1 text-[18px] font-semibold num tracking-tight ${k.tone==='green'?'text-emerald-700':k.tone==='amber'?'text-amber-700':'text-slate-900'}`}>{k.v}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">{k.sub}</div>
+          </Card>
+        ))}
+      </div>
+
+      {/* Table */}
+      <Card>
+        <div className="grid grid-cols-[1.4fr_0.5fr_1fr_0.8fr_0.7fr_1fr_24px] gap-3 px-3 py-2 border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-500 font-medium">
+          <div>External ID</div>
+          <div>Currency</div>
+          <div className="text-right">Available Balance</div>
+          <div className="text-right">Reserved</div>
+          <div>Status</div>
+          <div>Updated</div>
+          <div/>
+        </div>
+        <div>
+          {filtered.map((w, i) => (
+            <button
+              key={w.id}
+              onClick={() => onOpen(w.id)}
+              className={`w-full grid grid-cols-[1.4fr_0.5fr_1fr_0.8fr_0.7fr_1fr_24px] gap-3 px-3 py-1.5 text-xs text-left items-center row-hover ${i<filtered.length-1 ? 'border-b border-slate-100' : ''}`}
+            >
+              <div className="min-w-0">
+                <div className="font-mono text-slate-800 truncate">{w.ext}</div>
+                <div className="font-mono text-[10px] text-slate-400 truncate">{w.id}</div>
+              </div>
+              <div className="text-slate-600 font-medium">{w.cur}</div>
+              <div className="num text-right text-slate-900 font-medium">{fmtMoney(w.avail)}</div>
+              <div className={`num text-right ${w.reserved>0 ? 'text-amber-700' : 'text-slate-400'}`}>{fmtMoney(w.reserved)}</div>
+              <div>
+                <Badge tone={w.status==='ACTIVE'?'green':'slate'} dot>{w.status}</Badge>
+              </div>
+              <div className="text-slate-500 num text-[11px]">{relativeTime(w.updated)}</div>
+              <div className="text-slate-300"><Icon.ChevronRight className="w-3.5 h-3.5"/></div>
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center justify-between px-3 py-2 border-t border-slate-200 text-[11px] text-slate-500">
+          <div>Showing <span className="num text-slate-700">{filtered.length}</span> of <span className="num">10</span></div>
+          <div className="flex items-center gap-1">
+            <button className="h-6 w-6 grid place-items-center border border-slate-200 rounded hover:bg-slate-50 text-slate-400">‹</button>
+            <button className="h-6 w-6 grid place-items-center border border-slate-200 rounded bg-slate-50 text-slate-700 num">1</button>
+            <button className="h-6 w-6 grid place-items-center border border-slate-200 rounded hover:bg-slate-50 text-slate-400">›</button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
+function relativeTime(d){
+  const diff = Math.floor((now - d) / 1000);
+  if (diff < 60)   return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400)return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+}
+
+/* ---------- Screen 2: Wallet detail ---------- */
+const CollapsiblePanel = ({ title, defaultOpen=true, badge, children }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Card>
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 px-3 h-9 border-b border-slate-200 hover:bg-slate-50">
+        <Icon.Chevron className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? '' : '-rotate-90'}`}/>
+        <span className="text-sm font-semibold text-slate-800">{title}</span>
+        {badge && <span className="ml-auto text-[10px] text-slate-500 font-mono">{badge}</span>}
+      </button>
+      {open && <div className="p-3">{children}</div>}
+    </Card>
+  );
+};
+
+const TopUpForm = () => {
+  const [amount, setAmount] = useState('');
+  const [ref, setRef] = useState('');
+  const [idem, setIdem] = useState(uuid());
+  const [submitted, setSubmitted] = useState(false);
+  const err = amount && parseFloat(amount) > 1000000 ? 'Amount exceeds daily top-up limit (1,000,000.00 USD).' : null;
+
+  return (
+    <form className="space-y-2.5" onSubmit={(e)=>{ e.preventDefault(); if(!err && amount){ setSubmitted(true); setTimeout(()=>setSubmitted(false), 1800); setAmount(''); setIdem(uuid()); }}}>
+      <div>
+        <Label hint="USD">Amount</Label>
+        <div className="relative">
+          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 font-mono">$</span>
+          <Input className="pl-5" placeholder="0.00" value={amount} onChange={e=>setAmount(e.target.value)}/>
+        </div>
+        {err && <div className="text-[11px] text-red-600 mt-1 flex items-start gap-1"><Icon.Warn className="w-3 h-3 mt-0.5 shrink-0"/><span>{err}</span></div>}
+      </div>
+
+      <div>
+        <Label>External Ref</Label>
+        <Input placeholder="stripe_pi_3OAB..." value={ref} onChange={e=>setRef(e.target.value)}/>
+      </div>
+
+      <div>
+        <Label hint="auto-generated">Idempotency Key</Label>
+        <div className="flex gap-1">
+          <Input className="font-mono text-[10.5px]" value={idem} onChange={e=>setIdem(e.target.value)}/>
+          <button type="button" onClick={()=>setIdem(uuid())} className="h-7 w-7 shrink-0 grid place-items-center border border-slate-200 rounded hover:bg-slate-50 text-slate-500" title="Regenerate">
+            <Icon.Refresh className="w-3.5 h-3.5"/>
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        <Btn variant="primary" size="md" type="submit"><Icon.ArrowDown className="w-3.5 h-3.5"/>Top-up wallet</Btn>
+        {submitted && <span className="text-[11px] text-emerald-700 flex items-center gap-1"><Icon.Check className="w-3 h-3"/>Queued</span>}
+      </div>
+    </form>
+  );
+};
+
+const TransferForm = ({ wallet }) => {
+  const [target, setTarget] = useState('');
+  const [amount, setAmount] = useState('600.00');
+  const [idem, setIdem] = useState(uuid());
+  const avail = wallet.avail;
+  const insufficient = amount && parseFloat(amount) > avail;
+
+  return (
+    <form className="space-y-2.5" onSubmit={(e)=>e.preventDefault()}>
+      <div>
+        <Label>Target Wallet ID</Label>
+        <Input className="font-mono text-[11px]" placeholder="wlt_..." value={target} onChange={e=>setTarget(e.target.value)}/>
+      </div>
+
+      <div>
+        <Label hint={`avail ${fmtMoney(avail)} ${wallet.cur}`}>Amount</Label>
+        <div className="relative">
+          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 font-mono">$</span>
+          <Input className={`pl-5 ${insufficient ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : ''}`} value={amount} onChange={e=>setAmount(e.target.value)}/>
+        </div>
+        {insufficient && (
+          <div className="text-[11px] text-red-600 mt-1 flex items-start gap-1">
+            <Icon.Warn className="w-3 h-3 mt-0.5 shrink-0"/>
+            <span>Insufficient balance — available <span className="num font-medium">{fmtMoney(avail)} {wallet.cur}</span>, requested <span className="num font-medium">{fmtMoney(parseFloat(amount||0))}</span>.</span>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <Label hint="auto-generated">Idempotency Key</Label>
+        <div className="flex gap-1">
+          <Input className="font-mono text-[10.5px]" value={idem} onChange={e=>setIdem(e.target.value)}/>
+          <button type="button" onClick={()=>setIdem(uuid())} className="h-7 w-7 shrink-0 grid place-items-center border border-slate-200 rounded hover:bg-slate-50 text-slate-500">
+            <Icon.Refresh className="w-3.5 h-3.5"/>
+          </button>
+        </div>
+      </div>
+
+      <div className="pt-1">
+        <Btn variant="primary" size="md" type="submit" disabled={insufficient}><Icon.ArrowUp className="w-3.5 h-3.5"/>Send transfer</Btn>
+      </div>
+    </form>
+  );
+};
+
+const WalletDetailScreen = ({ id, onBack }) => {
+  const wallet = WALLETS.find(w => w.id === id) || WALLETS[0];
+
+  return (
+    <div className="p-4 space-y-3" data-screen-label="02 Wallet detail">
+      <div className="flex items-end justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <button onClick={onBack} className="text-[11px] text-slate-500 hover:text-slate-800">← Wallets</button>
+            <span className="text-slate-300 text-xs">/</span>
+            <span className="text-[11px] font-mono text-slate-500">{wallet.id}</span>
+          </div>
+          <div className="text-base font-semibold tracking-tight mt-1">{wallet.ext}</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge tone={wallet.status==='ACTIVE'?'green':'slate'} dot>{wallet.status}</Badge>
+          <Btn variant="secondary">Freeze wallet</Btn>
+          <Btn variant="secondary">Audit log</Btn>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[3fr_2fr] gap-3">
+        {/* LEFT 60% */}
+        <div className="space-y-3 min-w-0">
+          {/* Metadata card */}
+          <Card className="p-3">
+            <div className="grid grid-cols-4 gap-3">
+              <Field label="Available" big value={`${fmtMoney(wallet.avail)} ${wallet.cur}`}/>
+              <Field label="Reserved"  value={`${fmtMoney(wallet.reserved)} ${wallet.cur}`} tone={wallet.reserved>0?'amber':'slate'}/>
+              <Field label="Currency"  value={wallet.cur}/>
+              <Field label="Updated"   value={relativeTime(wallet.updated)} sub={fmtTs(wallet.updated)}/>
+              <Field label="Wallet ID"     mono value={wallet.id}/>
+              <Field label="External ID"   mono value={wallet.ext}/>
+              <Field label="Created"       value="2024-09-14 11:02 UTC"/>
+              <Field label="Owner"         value="usr_42061 — Imani Okafor"/>
+            </div>
+          </Card>
+
+          {/* Snapshots */}
+          <Card>
+            <div className="flex items-center justify-between px-3 h-9 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-800">Balance snapshots</span>
+                <span className="text-[10px] text-slate-500 font-mono">last 6</span>
+              </div>
+              <button className="text-[11px] text-indigo-600 hover:text-indigo-800">View all →</button>
+            </div>
+            <div>
+              <div className="grid grid-cols-[1.2fr_1fr_1.2fr] gap-3 px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-500 font-medium border-b border-slate-100">
+                <div>Tx ID</div>
+                <div className="text-right">Balance</div>
+                <div>Timestamp</div>
+              </div>
+              {SNAPSHOTS.map((s, i) => (
+                <div key={s.tx} className={`grid grid-cols-[1.2fr_1fr_1.2fr] gap-3 px-3 py-1.5 text-xs items-center ${i<SNAPSHOTS.length-1 ? 'border-b border-slate-100' : ''}`}>
+                  <div className="font-mono text-slate-700">{s.tx}</div>
+                  <div className="num text-right text-slate-900 font-medium">{fmtMoney(s.balance)} <span className="text-slate-400 text-[10px]">{wallet.cur}</span></div>
+                  <div className="text-slate-500 num text-[11px]">{fmtTs(s.ts)}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Ledger entry history */}
+          <Card>
+            <div className="flex items-center justify-between px-3 h-9 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-800">Ledger entry history</span>
+                <span className="text-[10px] text-slate-500 font-mono">6 of 247</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button className="h-6 px-1.5 text-[11px] text-slate-600 hover:bg-slate-100 rounded">CSV</button>
+                <button className="text-[11px] text-indigo-600 hover:text-indigo-800">Open in Ledger →</button>
+              </div>
+            </div>
+            <div>
+              <div className="grid grid-cols-[1fr_2.2fr_0.7fr_0.8fr] gap-3 px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-500 font-medium border-b border-slate-100">
+                <div>Tx ID</div>
+                <div>Description</div>
+                <div>Direction</div>
+                <div className="text-right">Amount</div>
+              </div>
+              {ENTRIES.map((e, i) => (
+                <div key={e.tx} className={`grid grid-cols-[1fr_2.2fr_0.7fr_0.8fr] gap-3 px-3 py-1.5 text-xs items-center ${i<ENTRIES.length-1 ? 'border-b border-slate-100' : ''}`}>
+                  <div className="font-mono text-slate-700">{e.tx}</div>
+                  <div className="text-slate-700 truncate">{e.desc}</div>
+                  <div>
+                    {e.dir==='CREDIT'
+                      ? <span className="inline-flex items-center gap-1 text-emerald-700 text-[11px] font-medium"><Icon.ArrowDown className="w-3 h-3"/>CREDIT</span>
+                      : <span className="inline-flex items-center gap-1 text-slate-600 text-[11px] font-medium"><Icon.ArrowUp className="w-3 h-3"/>DEBIT</span>}
+                  </div>
+                  <div className={`num text-right font-medium ${e.dir==='CREDIT' ? 'text-emerald-700' : 'text-slate-900'}`}>
+                    {e.dir==='CREDIT' ? '+' : '−'}{fmtMoney(e.amount)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+
+        {/* RIGHT 40% */}
+        <div className="space-y-3">
+          <CollapsiblePanel title="Top-up" badge="POST /wallets/:id/topup">
+            <TopUpForm/>
+          </CollapsiblePanel>
+
+          <CollapsiblePanel title="Transfer to" badge="POST /transfers">
+            <TransferForm wallet={wallet}/>
+          </CollapsiblePanel>
+
+          <CollapsiblePanel title="Hold / Release" defaultOpen={false} badge="POST /reservations">
+            <div className="text-[11px] text-slate-500">Place or release a reservation on this wallet. Reservations debit available balance but do not post to the ledger until captured.</div>
+          </CollapsiblePanel>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Field = ({ label, value, sub, mono, big, tone }) => (
+  <div className="min-w-0">
+    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">{label}</div>
+    <div className={`mt-0.5 truncate ${big ? 'text-base font-semibold' : 'text-xs font-medium'} ${mono ? 'font-mono text-[11px]' : ''} ${tone==='amber' ? 'text-amber-700' : 'text-slate-900'} ${big ? 'num' : ''}`}>{value}</div>
+    {sub && <div className="text-[10px] text-slate-400 mt-0.5 num truncate">{sub}</div>}
+  </div>
+);
+
+/* ---------- Screen 3: Ledger + drawer ---------- */
+const LedgerScreen = () => {
+  const [selected, setSelected] = useState(null);
+  const [search, setSearch] = useState('');
+  const [from, setFrom] = useState('2026-05-13');
+  const [to, setTo]     = useState('2026-05-20');
+
+  const list = LEDGER_TX.filter(t => !search || t.desc.toLowerCase().includes(search.toLowerCase()) || t.id.includes(search));
+
+  return (
+    <div className="p-4 space-y-3 relative" data-screen-label="03 Ledger">
+      <div className="flex items-end justify-between">
+        <div>
+          <div className="text-base font-semibold tracking-tight">Ledger</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">Double-entry transactions · all postings net to 0</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Btn variant="secondary">Export CSV</Btn>
+          <Btn variant="primary"><Icon.Plus className="w-3.5 h-3.5"/>Manual entry</Btn>
+        </div>
+      </div>
+
+      {/* Filter bar */}
+      <Card className="px-3 py-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase tracking-wide text-slate-500 font-medium">From</span>
+            <div className="relative">
+              <Icon.Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-1.5 top-1/2 -translate-y-1/2"/>
+              <input type="date" value={from} onChange={e=>setFrom(e.target.value)} className="h-7 pl-6 pr-2 text-xs border border-slate-200 rounded bg-white font-mono"/>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase tracking-wide text-slate-500 font-medium">To</span>
+            <div className="relative">
+              <Icon.Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-1.5 top-1/2 -translate-y-1/2"/>
+              <input type="date" value={to} onChange={e=>setTo(e.target.value)} className="h-7 pl-6 pr-2 text-xs border border-slate-200 rounded bg-white font-mono"/>
+            </div>
+          </div>
+
+          <div className="h-5 w-px bg-slate-200 mx-1"/>
+
+          <div className="relative flex-1 max-w-md">
+            <Icon.Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2"/>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search description or tx_…" className="h-7 w-full pl-7 pr-2 text-xs border border-slate-200 rounded bg-white placeholder:text-slate-400"/>
+          </div>
+
+          <select className="select-caret h-7 px-2 text-xs border border-slate-200 rounded bg-white text-slate-700">
+            <option>All statuses</option><option>POSTED</option><option>PENDING</option><option>REVERSED</option>
+          </select>
+          <select className="select-caret h-7 px-2 text-xs border border-slate-200 rounded bg-white text-slate-700">
+            <option>All accounts</option><option>asset:*</option><option>liability:*</option>
+          </select>
+
+          <div className="ml-auto text-[11px] text-slate-500"><span className="num text-slate-700 font-medium">{list.length}</span> transactions</div>
+        </div>
+      </Card>
+
+      {/* Table */}
+      <Card>
+        <div className="grid grid-cols-[1.1fr_2.6fr_0.7fr_1fr_24px] gap-3 px-3 py-2 border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-500 font-medium">
+          <div>ID</div>
+          <div>Description</div>
+          <div>Status</div>
+          <div>Created</div>
+          <div/>
+        </div>
+        <div>
+          {list.map((t, i) => {
+            const active = selected?.id === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setSelected(t)}
+                className={`w-full grid grid-cols-[1.1fr_2.6fr_0.7fr_1fr_24px] gap-3 px-3 py-1.5 text-xs text-left items-center transition-colors ${active ? 'bg-indigo-50' : 'hover:bg-slate-50'} ${i<list.length-1 ? 'border-b border-slate-100' : ''}`}
+              >
+                <div className={`font-mono ${active ? 'text-indigo-800' : 'text-slate-800'}`}>{t.id}</div>
+                <div className="text-slate-700 truncate">{t.desc}</div>
+                <div>
+                  <Badge tone={t.status==='POSTED'?'green':t.status==='PENDING'?'amber':'slate'} dot>{t.status}</Badge>
+                </div>
+                <div className="text-slate-500 num text-[11px]">{fmtTs(t.created)}</div>
+                <div className="text-slate-300"><Icon.ChevronRight className="w-3.5 h-3.5"/></div>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* Drawer */}
+      {selected && (
+        <>
+          <div className="fixed inset-0 bg-slate-900/10 z-30" onClick={() => setSelected(null)}/>
+          <div className="fixed top-0 right-0 h-full w-[440px] bg-white border-l border-slate-200 z-40 drawer-enter flex flex-col">
+            <div className="flex items-center px-3 h-11 border-b border-slate-200">
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500 font-medium">Transaction</div>
+                <div className="font-mono text-xs text-slate-800 truncate">{selected.id}</div>
+              </div>
+              <button onClick={() => setSelected(null)} className="ml-auto h-7 w-7 grid place-items-center text-slate-500 hover:bg-slate-100 rounded">
+                <Icon.Close className="w-3.5 h-3.5"/>
+              </button>
+            </div>
+
+            <div className="px-3 py-3 border-b border-slate-200 space-y-1.5">
+              <div className="text-sm text-slate-900 font-medium">{selected.desc}</div>
+              <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                <Badge tone={selected.status==='POSTED'?'green':selected.status==='PENDING'?'amber':'slate'} dot>{selected.status}</Badge>
+                <span className="font-mono num">{fmtTs(selected.created)}</span>
+              </div>
+              <div className="flex items-center gap-3 text-[11px] text-slate-500 pt-1">
+                <div><span className="text-slate-400">Reference</span> <span className="font-mono text-slate-700">stripe_pi_3OAB29Hk</span></div>
+                <div><span className="text-slate-400">Idempotency</span> <span className="font-mono text-slate-700">b81e…f902</span></div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto">
+              <div className="px-3 py-2 text-[10px] uppercase tracking-wide text-slate-500 font-medium border-b border-slate-100">Entries</div>
+              <DrawerEntries tx={selected.id}/>
+            </div>
+
+            <div className="border-t border-slate-200 p-3 flex items-center gap-2">
+              <Btn variant="secondary">View related</Btn>
+              <Btn variant="danger-outline" className="ml-auto" disabled={selected.status==='REVERSED'}><Icon.Reverse className="w-3.5 h-3.5"/>Reverse</Btn>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const DrawerEntries = ({ tx }) => {
+  const entries = TX_ENTRIES[tx] || [
+    { acct: 'asset:stripe_clearing',  dir: 'DEBIT',  amount:  500.0000 },
+    { acct: 'liability:wlt_8f3a1c',   dir: 'CREDIT', amount:  500.0000 },
+  ];
+  const sum = entries.reduce((acc, e) => acc + (e.dir==='DEBIT' ? e.amount : -e.amount), 0);
+
+  return (
+    <div>
+      <div className="grid grid-cols-[1.6fr_0.8fr_1fr] gap-3 px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-500 font-medium border-b border-slate-100">
+        <div>Account</div>
+        <div>Direction</div>
+        <div className="text-right">Amount</div>
+      </div>
+      {entries.map((e, i) => (
+        <div key={i} className="grid grid-cols-[1.6fr_0.8fr_1fr] gap-3 px-3 py-1.5 text-xs items-center border-b border-slate-100">
+          <div className="font-mono text-slate-800">{e.acct}</div>
+          <div>
+            {e.dir==='DEBIT'
+              ? <span className="inline-flex items-center gap-1 text-slate-700 text-[11px] font-medium"><Icon.ArrowUp className="w-3 h-3"/>DEBIT</span>
+              : <span className="inline-flex items-center gap-1 text-emerald-700 text-[11px] font-medium"><Icon.ArrowDown className="w-3 h-3"/>CREDIT</span>}
+          </div>
+          <div className="num text-right font-medium text-slate-900">{fmtMoney(e.amount)}</div>
+        </div>
+      ))}
+      <div className="grid grid-cols-[1.6fr_0.8fr_1fr] gap-3 px-3 py-2 text-xs items-center bg-slate-50">
+        <div className="text-[11px] text-slate-500 uppercase tracking-wide font-medium">Sum (DR − CR)</div>
+        <div className="text-[11px] text-emerald-700 font-medium flex items-center gap-1"><Icon.Check className="w-3 h-3"/>balanced</div>
+        <div className="num text-right font-bold text-slate-900">{fmtMoney(sum)}</div>
+      </div>
+    </div>
+  );
+};
+
+/* ---------- Screen 4: Reconciliation ---------- */
+const ReconScreen = () => {
+  return (
+    <div className="p-4 space-y-3" data-screen-label="04 Reconciliation run">
+      {/* Header */}
+      <div className="flex items-end justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-[11px] text-slate-500">
+            <span>Run</span>
+            <span className="font-mono text-slate-700">run_2026_05_20_08:00</span>
+            <Badge tone="indigo" dot>COMPLETED</Badge>
+          </div>
+          <div className="text-base font-semibold tracking-tight mt-1">Stripe payouts ↔ liability:wlt_8f3a1c</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">Window 2026-05-19 00:00 → 2026-05-20 00:00 UTC · 45 records · ran 7h 18m ago</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Btn variant="secondary">Re-run</Btn>
+          <Btn variant="secondary">Export report</Btn>
+          <Btn variant="primary">Finalize</Btn>
+        </div>
+      </div>
+
+      {/* Summary strip */}
+      <div className="grid grid-cols-5 gap-2">
+        {[
+          { l: 'Records',     v: '45',            tone:'slate' },
+          { l: 'Matched',     v: '42',            tone:'green', sub:'93.3%' },
+          { l: 'Exceptions',  v: '3',             tone:'amber' },
+          { l: 'Ledger total',v: '11,415.50',     tone:'slate' },
+          { l: 'Statement',   v: '11,414.25',     tone:'slate', sub:'Δ 1.25 USD' },
+        ].map(k => (
+          <Card key={k.l} className="px-3 py-2">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">{k.l}</div>
+            <div className={`mt-1 text-[16px] font-semibold num tracking-tight ${k.tone==='green'?'text-emerald-700':k.tone==='amber'?'text-amber-700':'text-slate-900'}`}>{k.v}</div>
+            {k.sub && <div className="text-[11px] text-slate-500 num">{k.sub}</div>}
+          </Card>
+        ))}
+      </div>
+
+      {/* Side-by-side */}
+      <div className="grid grid-cols-2 gap-2">
+        <MatchesPane/>
+        <ExceptionsPane/>
+      </div>
+    </div>
+  );
+};
+
+const MatchesPane = () => {
+  const [open, setOpen] = useState(true);
+  const [expanded, setExpanded] = useState(new Set([1, 5]));
+  const toggle = (id) => setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  return (
+    <Card className="overflow-hidden">
+      <button onClick={()=>setOpen(o=>!o)} className="w-full flex items-center gap-2 h-9 px-3 border-b border-slate-200 hover:bg-slate-50">
+        <Icon.Chevron className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? '' : '-rotate-90'}`}/>
+        <span className="text-sm font-semibold text-slate-800">Matches</span>
+        <Badge tone="green" dot>42</Badge>
+        <span className="ml-auto text-[11px] text-slate-500 num">11,202.75 USD</span>
+      </button>
+      {open && (
+        <div className="max-h-[520px] overflow-auto">
+          {MATCHES.map((m, i) => {
+            const isOpen = expanded.has(m.id);
+            return (
+              <div key={m.id} className={i<MATCHES.length-1 ? 'border-b border-slate-100' : ''}>
+                <button
+                  onClick={() => toggle(m.id)}
+                  className="w-full px-3 py-1.5 grid grid-cols-[16px_1fr_1fr_auto] gap-2 items-center text-left hover:bg-slate-50"
+                >
+                  <Icon.Chevron className={`w-3 h-3 text-slate-400 transition-transform ${isOpen ? '' : '-rotate-90'}`}/>
+                  <div className="min-w-0">
+                    <div className="text-[10px] text-slate-400 uppercase tracking-wide">Ledger</div>
+                    <div className="font-mono text-[11px] text-slate-700 truncate">{m.ledger}</div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[10px] text-slate-400 uppercase tracking-wide">Statement</div>
+                    <div className="font-mono text-[11px] text-slate-700 truncate">{m.stmt}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="num text-xs font-medium text-slate-900">{fmtMoney(m.amount)}</div>
+                    <div className="text-[10px] text-slate-400">USD</div>
+                  </div>
+                </button>
+                {isOpen && (
+                  <div className="px-3 pb-2 pl-7 grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="border border-slate-200 rounded p-2 bg-slate-50/60">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">Ledger</div>
+                      <div className="text-slate-700">{m.desc}</div>
+                      <div className="num text-[10px] text-slate-500 mt-1">{fmtTs(m.ts)}</div>
+                    </div>
+                    <div className="border border-slate-200 rounded p-2 bg-slate-50/60">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">Statement</div>
+                      <div className="text-slate-700">{m.desc}</div>
+                      <div className="num text-[10px] text-slate-500 mt-1">{fmtTs(m.ts)}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+};
+
+const ExceptionsPane = () => {
+  const [open, setOpen] = useState(true);
+  return (
+    <Card className="overflow-hidden">
+      <button onClick={()=>setOpen(o=>!o)} className="w-full flex items-center gap-2 h-9 px-3 border-b border-slate-200 hover:bg-slate-50">
+        <Icon.Chevron className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? '' : '-rotate-90'}`}/>
+        <span className="text-sm font-semibold text-slate-800">Exceptions</span>
+        <Badge tone="amber" dot>3</Badge>
+        <span className="ml-auto text-[11px] text-slate-500 flex items-center gap-1"><Icon.Warn className="w-3 h-3 text-amber-500"/>needs review</span>
+      </button>
+      {open && (
+        <div className="p-2 space-y-2 max-h-[520px] overflow-auto">
+          {EXCEPTIONS.map((ex, i) => <ExceptionCard key={i} ex={ex}/>)}
+        </div>
+      )}
+    </Card>
+  );
+};
+
+const ExceptionCard = ({ ex }) => {
+  const meta = {
+    UNMATCHED_LEDGER:    { label:'Unmatched ledger entry',    accent:'border-l-red-500',   tone:'red'   },
+    UNMATCHED_STATEMENT: { label:'Unmatched statement entry', accent:'border-l-slate-400', tone:'slate' },
+    AMOUNT_MISMATCH:     { label:'Amount mismatch',           accent:'border-l-amber-500', tone:'amber' },
+  }[ex.type];
+
+  return (
+    <div className={`border border-slate-200 ${meta.accent} border-l-4 rounded`}>
+      <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-slate-100">
+        <Badge tone={meta.tone} dot>{ex.type}</Badge>
+        <span className="text-[11px] text-slate-600">{meta.label}</span>
+        <button className="ml-auto text-[10px] text-slate-400 hover:text-slate-700">⋯</button>
+      </div>
+
+      <div className="p-2.5 grid grid-cols-2 gap-2">
+        {/* Ledger side */}
+        <div className="border border-slate-200 rounded bg-white">
+          <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-slate-500 border-b border-slate-100 flex items-center justify-between">
+            <span>Ledger</span>
+            {ex.ledger && <span className="font-mono text-[10px] text-slate-400 normal-case">{ex.ledger.id}</span>}
+          </div>
+          <div className="px-2 py-1.5">
+            {ex.ledger ? (
+              <>
+                <div className="text-[11px] text-slate-700 truncate">{ex.ledger.desc}</div>
+                <div className={`text-sm font-semibold num mt-0.5 ${ex.type==='AMOUNT_MISMATCH' ? 'text-amber-700 bg-amber-50 rounded px-1 -mx-1 inline-block' : 'text-slate-900'}`}>{fmtMoney(ex.ledger.amount)} <span className="text-[10px] text-slate-400 font-normal">USD</span></div>
+                <div className="text-[10px] text-slate-400 num mt-0.5">{fmtTs(ex.ledger.ts)}</div>
+              </>
+            ) : (
+              <div className="text-[11px] text-slate-400 italic">— not found</div>
+            )}
+          </div>
+        </div>
+
+        {/* Statement side */}
+        <div className="border border-slate-200 rounded bg-white">
+          <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-slate-500 border-b border-slate-100 flex items-center justify-between">
+            <span>Statement</span>
+            {ex.stmt && <span className="font-mono text-[10px] text-slate-400 normal-case">{ex.stmt.id}</span>}
+          </div>
+          <div className="px-2 py-1.5">
+            {ex.stmt ? (
+              <>
+                <div className="text-[11px] text-slate-700 truncate">{ex.stmt.desc}</div>
+                <div className={`text-sm font-semibold num mt-0.5 ${ex.type==='AMOUNT_MISMATCH' ? 'text-amber-700 bg-amber-50 rounded px-1 -mx-1 inline-block' : 'text-slate-900'}`}>{fmtMoney(ex.stmt.amount)} <span className="text-[10px] text-slate-400 font-normal">USD</span></div>
+                <div className="text-[10px] text-slate-400 num mt-0.5">{fmtTs(ex.stmt.ts)}</div>
+              </>
+            ) : (
+              <div className="text-[11px] text-slate-400 italic">— not found</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {ex.type === 'AMOUNT_MISMATCH' && (
+        <div className="mx-2.5 mb-2 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800 flex items-center gap-1.5">
+          <Icon.Warn className="w-3 h-3"/>
+          <span>Δ <span className="num font-semibold">{fmtMoney(ex.diff)} USD</span> — ledger exceeds statement by {fmtMoney(ex.diff)}.</span>
+        </div>
+      )}
+
+      <div className="px-2.5 pb-2 flex items-center gap-1.5 flex-wrap">
+        {ex.type === 'UNMATCHED_LEDGER' && <>
+          <Btn variant="secondary" size="xs"><Icon.Link className="w-3 h-3"/>Link to statement</Btn>
+          <Btn variant="secondary" size="xs">Write off</Btn>
+          <Btn variant="ghost" size="xs" className="text-slate-500">Mark in-flight</Btn>
+        </>}
+        {ex.type === 'UNMATCHED_STATEMENT' && <>
+          <Btn variant="secondary" size="xs"><Icon.Link className="w-3 h-3"/>Link to ledger</Btn>
+          <Btn variant="secondary" size="xs"><Icon.Plus className="w-3 h-3"/>Create entry</Btn>
+          <Btn variant="ghost" size="xs" className="text-slate-500">Ignore</Btn>
+        </>}
+        {ex.type === 'AMOUNT_MISMATCH' && <>
+          <Btn variant="secondary" size="xs">Adjust ledger</Btn>
+          <Btn variant="secondary" size="xs">Accept variance</Btn>
+          <Btn variant="ghost" size="xs" className="text-slate-500">Escalate</Btn>
+        </>}
+        <span className="ml-auto text-[10px] text-slate-400 font-mono">SLA: 24h</span>
+      </div>
+    </div>
+  );
+};
+
+/* ---------- Route-labelled section wrapper ---------- */
+const RouteSection = ({ route, label, children }) => (
+  <section className="border-b border-slate-200">
+    <div className="bg-slate-100/70 px-4 py-1.5 border-b border-slate-200 flex items-center gap-2 sticky top-0 z-10">
+      <span className="font-mono text-[11px] text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-0.5">{route}</span>
+      <span className="text-[11px] text-slate-500">{label}</span>
+    </div>
+    {children}
+  </section>
+);
+
+/* ---------- Root App ---------- */
+const App = () => {
+  // Persist a "current" navigation route for the shell, but render all 4 screens stacked.
+  const [route, setRoute] = useState({ screen: 'wallets' });
+
+  return (
+    <div className="min-h-screen flex flex-col" style={{ minWidth: 1280 }}>
+      {/* The single, persistent shell. TopBar breadcrumbs reflect the route the user last clicked in the sidebar. */}
+      <div className="flex flex-1 min-h-screen">
+        <Sidebar route={route} setRoute={setRoute}/>
+        <div className="flex-1 flex flex-col min-w-0">
+          <TopBar route={route} setRoute={setRoute}/>
+          <main className="flex-1 overflow-auto">
+            <RouteSection route="/wallets" label="Default view — all wallets for current operator">
+              <WalletsScreen onOpen={(id) => {
+                setRoute({ screen:'wallet-detail', id });
+                const el = document.getElementById('route-detail');
+                const main = el?.closest('main');
+                if (el && main) main.scrollTo({ top: el.offsetTop, behavior: 'smooth' });
+              }}/>
+            </RouteSection>
+
+            <div id="route-detail"/>
+            <RouteSection route="/wallets/:id" label={`Showing wlt_8f3a1c — usr_42061_main`}>
+              <WalletDetailScreen id={route.screen==='wallet-detail' ? route.id : 'wlt_8f3a1c'} onBack={() => setRoute({ screen:'wallets' })}/>
+            </RouteSection>
+
+            <RouteSection route="/ledger" label="All double-entry transactions">
+              <LedgerScreen/>
+            </RouteSection>
+
+            <RouteSection route="/reconciliation/runs/:id" label="run_2026_05_20_08:00 — Stripe payouts ↔ liability:wlt_8f3a1c">
+              <ReconScreen/>
+            </RouteSection>
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
