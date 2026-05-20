@@ -5,20 +5,21 @@ import com.walletledger.dto.LedgerTransactionResponse;
 import com.walletledger.dto.ReversalRequest;
 import com.walletledger.repository.*;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.NotFoundException;
+import lombok.RequiredArgsConstructor;
 import java.time.Instant;
 import java.util.List;
 
 @ApplicationScoped
+@RequiredArgsConstructor
 public class LedgerService {
 
-    @Inject LedgerTransactionRepository ledgerTxRepo;
-    @Inject LedgerEntryRepository ledgerEntryRepo;
-    @Inject LedgerAccountRepository ledgerAccountRepo;
-    @Inject WalletRepository walletRepo;
-    @Inject WalletBalanceSnapshotRepository snapshotRepo;
+    private final LedgerTransactionRepository ledgerTxRepo;
+    private final LedgerEntryRepository ledgerEntryRepo;
+    private final LedgerAccountRepository ledgerAccountRepo;
+    private final WalletRepository walletRepo;
+    private final WalletBalanceSnapshotRepository snapshotRepo;
 
     @Transactional
     public LedgerTransactionResponse reverse(ReversalRequest req) {

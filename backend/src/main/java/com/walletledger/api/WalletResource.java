@@ -3,20 +3,21 @@ package com.walletledger.api;
 import com.walletledger.dto.*;
 import com.walletledger.repository.WalletRepository;
 import com.walletledger.service.WalletService;
-import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import lombok.RequiredArgsConstructor;
 import java.util.UUID;
 
 @Path("/api/v1/wallets")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
+@RequiredArgsConstructor
 public class WalletResource {
 
-    @Inject WalletService walletService;
-    @Inject WalletRepository walletRepo;
+    private final WalletService walletService;
+    private final WalletRepository walletRepo;
 
     @POST
     public Response create(@Valid CreateWalletRequest req) {

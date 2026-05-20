@@ -4,22 +4,23 @@ import com.walletledger.domain.*;
 import com.walletledger.dto.*;
 import com.walletledger.repository.*;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
+import lombok.RequiredArgsConstructor;
 import java.time.Instant;
 import java.util.UUID;
 
 @ApplicationScoped
+@RequiredArgsConstructor
 public class WalletService {
 
-    @Inject UserRepository userRepo;
-    @Inject WalletRepository walletRepo;
-    @Inject LedgerAccountRepository ledgerAccountRepo;
-    @Inject LedgerTransactionRepository ledgerTxRepo;
-    @Inject LedgerEntryRepository ledgerEntryRepo;
-    @Inject WalletBalanceSnapshotRepository snapshotRepo;
+    private final UserRepository userRepo;
+    private final WalletRepository walletRepo;
+    private final LedgerAccountRepository ledgerAccountRepo;
+    private final LedgerTransactionRepository ledgerTxRepo;
+    private final LedgerEntryRepository ledgerEntryRepo;
+    private final WalletBalanceSnapshotRepository snapshotRepo;
 
     @Transactional
     public WalletResponse createWallet(CreateWalletRequest req) {
@@ -145,8 +146,6 @@ public class WalletService {
 
         return new TransferResponse(WalletResponse.from(from), WalletResponse.from(to));
     }
-
-    // ---- helpers ----
 
     private void persistEntry(Long accountId, Long txId, String direction,
                                java.math.BigDecimal amount, String currency, String reference) {

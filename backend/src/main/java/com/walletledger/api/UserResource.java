@@ -4,20 +4,21 @@ import com.walletledger.domain.User;
 import com.walletledger.dto.CreateUserRequest;
 import com.walletledger.dto.UserResponse;
 import com.walletledger.repository.UserRepository;
-import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import lombok.RequiredArgsConstructor;
 import java.util.UUID;
 
 @Path("/api/v1/users")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
+@RequiredArgsConstructor
 public class UserResource {
 
-    @Inject UserRepository userRepo;
+    private final UserRepository userRepo;
 
     @POST
     @Transactional
