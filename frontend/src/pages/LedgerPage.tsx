@@ -34,7 +34,7 @@ export default function LedgerPage() {
       {
         ledgerTransactionId: reversalTarget.id,
         idempotencyKey: reversalKey,
-        description: reversalDesc || undefined,
+        reason: reversalReason,
       },
       { onSuccess: closeReversal },
     );
@@ -71,13 +71,14 @@ export default function LedgerPage() {
             </div>
 
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-slate-700">Reversal Description</span>
+              <span className="text-xs font-medium text-slate-700">Reason</span>
               <input
                 type="text"
-                value={reversalDesc}
-                onChange={(e) => setReversalDesc(e.target.value)}
-                placeholder="Optional"
-                className="rounded border border-slate-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+                value={reversalReason}
+                onChange={(e) => setReversalReason(e.target.value)}
+                placeholder="e.g. Customer dispute"
+                className="rounded border border-slate-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </label>
 

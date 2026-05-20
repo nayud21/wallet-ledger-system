@@ -16,7 +16,6 @@ export default function WalletsPage() {
 
   const [newUserId, setNewUserId] = useState('');
   const [newCurrency, setNewCurrency] = useState('');
-  const [newKey, setNewKey] = useState<string>(crypto.randomUUID());
 
   function handleSearch() {
     setDebouncedUserId(userId);
@@ -26,12 +25,11 @@ export default function WalletsPage() {
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     createWallet(
-      { userId: newUserId, currency: newCurrency.toUpperCase(), idempotencyKey: newKey },
+      { userId: newUserId, currency: newCurrency.toUpperCase() },
       {
         onSuccess: () => {
           setNewUserId('');
           setNewCurrency('');
-          setNewKey(crypto.randomUUID());
           setShowCreate(false);
         },
       },
@@ -123,15 +121,7 @@ export default function WalletsPage() {
                 placeholder="USD"
                 className="h-7 rounded border border-slate-200 px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500" />
             </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] font-medium text-slate-600 uppercase tracking-wide">Idempotency Key</span>
-              <div className="flex gap-1">
-                <input type="text" required value={newKey} onChange={(e) => setNewKey(e.target.value)}
-                  className="flex-1 h-7 rounded border border-slate-200 px-2.5 font-mono text-[10.5px] focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500" />
-                <Button type="button" variant="secondary" size="sm" onClick={() => setNewKey(crypto.randomUUID())}>New</Button>
-              </div>
-            </label>
-            {createError && <p className="text-xs text-red-600">{(createError as Error).message}</p>}
+{createError && <p className="text-xs text-red-600">{(createError as Error).message}</p>}
             <div className="flex justify-end pt-1">
               <Button type="submit" disabled={creating}>{creating ? 'Creating…' : 'Create'}</Button>
             </div>

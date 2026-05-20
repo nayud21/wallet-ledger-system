@@ -14,6 +14,6 @@ public class LedgerEntryRepository implements PanacheRepositoryBase<LedgerEntry,
     }
 
     public List<LedgerEntry> findByLedgerAccountId(Long accountId) {
-        return list("ledgerAccountId", accountId, Sort.by("createdAt").descending());
+        return list("ledgerAccountId", Sort.by("createdAt").descending(), accountId);
     }
 }

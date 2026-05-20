@@ -31,7 +31,7 @@ export default function TopUpForm({ wallet }: TopUpFormProps) {
         walletId: wallet.id,
         amount: parsedAmount,
         currency: wallet.currency,
-        description: externalRef || undefined,
+        externalRef: externalRef || undefined,
         idempotencyKey,
       },
       {
