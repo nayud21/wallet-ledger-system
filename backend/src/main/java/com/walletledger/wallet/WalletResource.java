@@ -4,6 +4,7 @@ import com.walletledger.ledger.LedgerEntryRepository;
 import com.walletledger.ledger.dto.LedgerEntryResponse;
 import com.walletledger.wallet.dto.*;
 import io.smallrye.mutiny.Multi;
+import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -25,11 +26,25 @@ public class WalletResource {
     private final WalletEventBus walletEventBus;
 
     @GET
-    public List<WalletResponse> list(@QueryParam("userId") UUID userId) {
+    public List<WalletResponse> list(@QueryParam("userId") UUID userId,
+                                     @QueryParam("status") String status) {
+        if (userId != null && status != null) {
+            return walletRepo.find("userId = ?1 and status = ?2", userId, status.toUpperCase())
+                .stream().map(WalletResponse::from).toList();
+        }
         if (userId != null) {
             return walletRepo.findByUserId(userId).stream().map(WalletResponse::from).toList();
         }
+        if (status != null) {
+            return walletRepo.find("status", status.toUpperCase()).stream().map(WalletResponse::from).toList();
+        }
         return walletRepo.listAll().stream().map(WalletResponse::from).toList();
+    }
+
+    @GET
+    @Path("/stats")
+    public WalletStatsResponse stats() {
+        return walletService.getStats();
     }
 
     @POST
@@ -72,6 +87,20 @@ public class WalletResource {
         }
         return ledgerEntryRepo.findByLedgerAccountId(wallet.ledgerAccountId)
             .stream().map(LedgerEntryResponse::from).toList();
+    }
+
+    @POST
+    @Path("/{id}/freeze")
+    @Transactional
+    public WalletResponse freeze(@PathParam("id") UUID id) {
+        return walletService.freeze(id);
+    }
+
+    @POST
+    @Path("/{id}/unfreeze")
+    @Transactional
+    public WalletResponse unfreeze(@PathParam("id") UUID id) {
+        return walletService.unfreeze(id);
     }
 
     @GET

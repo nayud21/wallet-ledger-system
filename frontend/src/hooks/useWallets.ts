@@ -4,16 +4,19 @@ import {
   fetchWallet,
   fetchWalletEntries,
   fetchRecentRecipients,
+  fetchWalletStats,
+  freezeWallet,
+  unfreezeWallet,
   topUpWallet,
   transferWallet,
   createWallet,
 } from '../api/wallets';
 import type { CreateWalletRequest, TopUpRequest, TransferRequest } from '../types/api';
 
-export function useWallets(userId?: string) {
+export function useWallets(userId?: string, status?: string) {
   return useQuery({
-    queryKey: ['wallets', userId],
-    queryFn: () => fetchWallets(userId),
+    queryKey: ['wallets', userId, status],
+    queryFn: () => fetchWallets(userId, status),
   });
 }
 
@@ -65,5 +68,29 @@ export function useRecentRecipients(userId: string) {
     queryKey: ['recentRecipients', userId],
     queryFn: () => fetchRecentRecipients(userId),
     enabled: !!userId,
+  });
+}
+
+export function useWalletStats() {
+  return useQuery({
+    queryKey: ['walletStats'],
+    queryFn: fetchWalletStats,
+    staleTime: 30_000,
+  });
+}
+
+export function useFreezeWallet() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => freezeWallet(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wallets'] }),
+  });
+}
+
+export function useUnfreezeWallet() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => unfreezeWallet(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wallets'] }),
   });
 }

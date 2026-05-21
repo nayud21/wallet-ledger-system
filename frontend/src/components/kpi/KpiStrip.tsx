@@ -1,23 +1,35 @@
-import type { WalletResponse } from '../../types/api';
-
-interface KpiStripProps {
-  wallets: WalletResponse[];
-}
+import { useWalletStats } from '../../hooks/useWallets';
 
 const fmtMoney = (n: number) =>
   new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
-export default function KpiStrip({ wallets }: KpiStripProps) {
-  const totalAvailable = wallets.reduce((s, w) => s + w.availableBalance, 0);
-  const totalReserved = wallets.reduce((s, w) => s + w.reservedBalance, 0);
-  const frozenCount = wallets.filter((w) => w.status === 'FROZEN').length;
-  const walletsWithHolds = wallets.filter((w) => w.reservedBalance > 0).length;
+export default function KpiStrip() {
+  const { data: stats, isLoading } = useWalletStats();
 
   const tiles = [
-    { label: 'Total available', value: fmtMoney(totalAvailable), sub: `across ${new Set(wallets.map(w => w.currency)).size} currencies` },
-    { label: 'Total reserved',  value: fmtMoney(totalReserved),  sub: `${walletsWithHolds} wallets with holds` },
-    { label: 'Net inflow 24h',  value: '+ 8,420.00',             sub: 'vs −1,205.00 yesterday', tone: 'green' as const },
-    { label: 'Frozen wallets',  value: String(frozenCount),      sub: 'review queue', tone: 'amber' as const },
+    {
+      label: 'Total wallets',
+      value: isLoading ? '—' : String(stats!.totalWallets),
+      sub: `${isLoading ? '—' : stats!.activeWallets} active`,
+    },
+    {
+      label: 'Active wallets',
+      value: isLoading ? '—' : String(stats!.activeWallets),
+      sub: `${isLoading ? '—' : stats!.totalWallets - stats!.activeWallets} frozen`,
+      tone: 'green' as const,
+    },
+    {
+      label: 'Net inflow 24h',
+      value: isLoading ? '—' : `+ ${fmtMoney(stats!.totalVolume24h)}`,
+      sub: 'credited in last 24h',
+      tone: 'green' as const,
+    },
+    {
+      label: 'Pending events',
+      value: isLoading ? '—' : String(stats!.pendingEvents),
+      sub: 'webhook inbox',
+      tone: stats && stats.pendingEvents > 0 ? 'amber' as const : undefined,
+    },
   ];
 
   return (

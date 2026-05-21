@@ -124,8 +124,13 @@ function Step0({ wallets, selectedId, onSelect, onContinue }: {
           })}
         </div>
         <div className="mt-5">
+          {selectedId && wallets.find(w => w.id === selectedId)?.status === 'FROZEN' && (
+            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-800">
+              This wallet is frozen. Unfreeze it before topping up.
+            </div>
+          )}
           <button
-            disabled={!selectedId}
+            disabled={!selectedId || wallets.find(w => w.id === selectedId)?.status === 'FROZEN'}
             onClick={onContinue}
             className="h-11 w-full px-5 text-[15px] inline-flex items-center justify-center gap-1.5 rounded-lg font-medium bg-indigo-600 text-white border border-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 disabled:border-indigo-300 disabled:cursor-not-allowed transition-colors"
           >

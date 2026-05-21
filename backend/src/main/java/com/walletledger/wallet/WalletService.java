@@ -1,6 +1,7 @@
 package com.walletledger.wallet;
 
 import com.walletledger.ledger.*;
+import com.walletledger.payment.PaymentEventRepository;
 import com.walletledger.shared.exception.*;
 import com.walletledger.shared.util.RequestHasher;
 import com.walletledger.user.UserRepository;
@@ -10,6 +11,7 @@ import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.NotFoundException;
 import lombok.RequiredArgsConstructor;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -23,6 +25,7 @@ public class WalletService {
     private final LedgerTransactionRepository ledgerTxRepo;
     private final LedgerEntryRepository ledgerEntryRepo;
     private final WalletBalanceSnapshotRepository snapshotRepo;
+    private final PaymentEventRepository paymentEventRepo;
     private final Event<WalletEvent> walletEvents;
 
     @Transactional
@@ -178,6 +181,32 @@ public class WalletService {
         entry.currency = currency;
         entry.reference = reference;
         ledgerEntryRepo.persist(entry);
+    }
+
+    @Transactional
+    public WalletResponse freeze(UUID id) {
+        Wallet wallet = walletRepo.findByIdOptional(id)
+            .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
+        wallet.status = "FROZEN";
+        wallet.updatedAt = Instant.now();
+        return WalletResponse.from(wallet);
+    }
+
+    @Transactional
+    public WalletResponse unfreeze(UUID id) {
+        Wallet wallet = walletRepo.findByIdOptional(id)
+            .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
+        wallet.status = "ACTIVE";
+        wallet.updatedAt = Instant.now();
+        return WalletResponse.from(wallet);
+    }
+
+    public WalletStatsResponse getStats() {
+        long totalWallets = walletRepo.count();
+        long activeWallets = walletRepo.count("status", "ACTIVE");
+        BigDecimal totalVolume24h = ledgerEntryRepo.sumCreditedLast24h();
+        long pendingEvents = paymentEventRepo.count("status", "PENDING");
+        return new WalletStatsResponse(totalWallets, activeWallets, totalVolume24h, pendingEvents);
     }
 
     private void persistSnapshot(Wallet wallet, Long txId) {

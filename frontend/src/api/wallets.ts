@@ -7,10 +7,14 @@ import type {
   TransferRequest,
   TransferResponse,
   RecentRecipientResponse,
+  WalletStatsResponse,
 } from '../types/api';
 
-export function fetchWallets(userId?: string): Promise<WalletResponse[]> {
-  const qs = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+export function fetchWallets(userId?: string, status?: string): Promise<WalletResponse[]> {
+  const params = new URLSearchParams();
+  if (userId) params.set('userId', userId);
+  if (status) params.set('status', status);
+  const qs = params.size > 0 ? `?${params}` : '';
   return apiFetch<WalletResponse[]>(`/api/v1/wallets${qs}`);
 }
 
@@ -47,4 +51,16 @@ export function fetchRecentRecipients(userId: string, limit = 5): Promise<Recent
   return apiFetch<RecentRecipientResponse[]>(
     `/api/v1/wallets/recent-recipients?userId=${encodeURIComponent(userId)}&limit=${limit}`
   );
+}
+
+export function fetchWalletStats(): Promise<WalletStatsResponse> {
+  return apiFetch<WalletStatsResponse>('/api/v1/wallets/stats');
+}
+
+export function freezeWallet(id: string): Promise<WalletResponse> {
+  return apiFetch<WalletResponse>(`/api/v1/wallets/${id}/freeze`, { method: 'POST' });
+}
+
+export function unfreezeWallet(id: string): Promise<WalletResponse> {
+  return apiFetch<WalletResponse>(`/api/v1/wallets/${id}/unfreeze`, { method: 'POST' });
 }

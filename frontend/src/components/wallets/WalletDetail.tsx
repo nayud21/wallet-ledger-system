@@ -1,5 +1,6 @@
-import { useWallet, useWalletEntries } from '../../hooks/useWallets';
+import { useWallet, useWalletEntries, useFreezeWallet, useUnfreezeWallet } from '../../hooks/useWallets';
 import Badge from '../ui/Badge';
+import Button from '../ui/Button';
 import EntryList from '../ledger/EntryList';
 
 interface WalletDetailProps {
@@ -9,6 +10,8 @@ interface WalletDetailProps {
 export default function WalletDetail({ walletId }: WalletDetailProps) {
   const { data: wallet, isLoading: wLoading, error: wError } = useWallet(walletId);
   const { data: entries, isLoading: eLoading, error: eError } = useWalletEntries(walletId);
+  const { mutate: freeze, isPending: freezing } = useFreezeWallet();
+  const { mutate: unfreeze, isPending: unfreezing } = useUnfreezeWallet();
 
   if (wLoading) return <p className="text-sm text-slate-500">Loading...</p>;
   if (wError) return <p className="text-sm text-red-600">{(wError as Error).message}</p>;
@@ -25,6 +28,17 @@ export default function WalletDetail({ walletId }: WalletDetailProps) {
         </div>
         <p className="font-mono text-xs text-slate-400">{wallet.id}</p>
         <p className="mt-0.5 font-mono text-xs text-slate-400">User: {wallet.userId.slice(0, 8)}…</p>
+        <div className="mt-2 flex gap-2">
+          {wallet.status === 'ACTIVE' ? (
+            <Button variant="danger" size="sm" disabled={freezing} onClick={() => freeze(wallet.id)}>
+              {freezing ? 'Freezing…' : 'Freeze'}
+            </Button>
+          ) : (
+            <Button variant="secondary" size="sm" disabled={unfreezing} onClick={() => unfreeze(wallet.id)}>
+              {unfreezing ? 'Unfreezing…' : 'Unfreeze'}
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

@@ -84,3 +84,18 @@ export interface ReversalRequest {
   idempotencyKey: string;
   reason: string;
 }
+
+export interface PaymentEventResponse {
+  id: number;
+  provider: string;
+  externalRef: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface WalletStatsResponse {
+  totalWallets: number;
+  activeWallets: number;
+  totalVolume24h: number;
+  pendingEvents: number;
+}

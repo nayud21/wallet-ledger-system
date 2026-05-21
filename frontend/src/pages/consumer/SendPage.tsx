@@ -157,6 +157,7 @@ export default function SendPage() {
     wallets?.find(w => w.id === fromWalletId) ?? wallets?.[0];
 
   const amountNum = parseFloat(amount) || 0;
+  const fromFrozen = !!fromWallet && fromWallet.status === 'FROZEN';
   const insufficient = !!fromWallet && amountNum > fromWallet.availableBalance;
 
   async function handleContinueStep0() {
@@ -454,7 +455,14 @@ export default function SendPage() {
                 </dl>
               </div>
 
-              {error && (
+              {fromFrozen && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-800 flex items-start gap-2">
+                  <WarnIcon />
+                  <span>This wallet is frozen and cannot send funds. Contact support or unfreeze the wallet first.</span>
+                </div>
+              )}
+
+              {error && !fromFrozen && (
                 <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] text-rose-700">
                   {error}
                 </div>
@@ -466,7 +474,7 @@ export default function SendPage() {
                 </button>
                 <button
                   onClick={handleConfirm}
-                  disabled={transfer.isPending}
+                  disabled={transfer.isPending || fromFrozen}
                   className="h-11 inline-flex items-center justify-center gap-1.5 rounded-lg text-[15px] font-medium bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600 disabled:bg-indigo-300 disabled:border-indigo-300 disabled:cursor-not-allowed transition-colors"
                 >
                   {transfer.isPending ? 'Sending…' : 'Confirm & Send'}

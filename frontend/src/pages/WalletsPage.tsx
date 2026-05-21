@@ -2,13 +2,15 @@ import { useState } from 'react';
 import { useWallets, useCreateWallet } from '../hooks/useWallets';
 import WalletTable from '../components/wallets/WalletTable';
 import WalletDetail from '../components/wallets/WalletDetail';
+import KpiStrip from '../components/kpi/KpiStrip';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
 
 export default function WalletsPage() {
   const [userId, setUserId] = useState('');
   const [debouncedUserId, setDebouncedUserId] = useState('');
-  const { data: wallets, isLoading, error } = useWallets(debouncedUserId || undefined);
+  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const { data: wallets, isLoading, error } = useWallets(debouncedUserId || undefined, statusFilter);
   const { mutate: createWallet, isPending: creating, error: createError } = useCreateWallet();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -36,8 +38,15 @@ export default function WalletsPage() {
     );
   }
 
+  const STATUS_TABS = [
+    { label: 'All',    value: undefined },
+    { label: 'Active', value: 'ACTIVE' },
+    { label: 'Frozen', value: 'FROZEN' },
+  ] as const;
+
   return (
     <div className="p-4 flex flex-col gap-3 h-full">
+      <KpiStrip />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -48,12 +57,17 @@ export default function WalletsPage() {
         </div>
         <div className="flex gap-2">
           <div className="flex gap-0 border border-slate-200 rounded overflow-hidden">
-            {(['All', 'Active', 'Frozen'] as const).map((f) => (
+            {STATUS_TABS.map((tab) => (
               <button
-                key={f}
-                className="h-7 px-3 text-[12px] text-slate-600 hover:bg-slate-50 border-r border-slate-200 last:border-r-0"
+                key={tab.label}
+                onClick={() => { setStatusFilter(tab.value); setSelectedId(null); }}
+                className={`h-7 px-3 text-[12px] border-r border-slate-200 last:border-r-0 transition-colors ${
+                  statusFilter === tab.value
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
               >
-                {f}
+                {tab.label}
               </button>
             ))}
           </div>

@@ -2,36 +2,33 @@ package com.walletledger.shared.error;
 
 import com.walletledger.shared.exception.*;
 import jakarta.validation.ConstraintViolationException;
+import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
+
+import java.util.Map;
 
 @Provider
 public class GlobalExceptionMapper implements ExceptionMapper<Throwable> {
 
     private static final String PROBLEM_JSON = "application/problem+json";
 
+    private record ErrorDef(int status, String title) {}
+
+    private static final Map<Class<? extends Throwable>, ErrorDef> ERRORS = Map.of(
+        InsufficientBalanceException.class, new ErrorDef(422, "Insufficient Balance"),
+        CurrencyMismatchException.class,    new ErrorDef(422, "Currency Mismatch"),
+        WalletNotActiveException.class,     new ErrorDef(422, "Wallet Not Active"),
+        IdempotencyConflictException.class, new ErrorDef(409, "Idempotency Conflict"),
+        AlreadyReversedException.class,     new ErrorDef(422, "Already Reversed"),
+        NotFoundException.class,            new ErrorDef(404, "Not Found"),
+        BadRequestException.class,          new ErrorDef(400, "Bad Request")
+    );
+
     @Override
     public Response toResponse(Throwable ex) {
-        if (ex instanceof InsufficientBalanceException) {
-            return problem(422, "Insufficient Balance", ex.getMessage());
-        }
-        if (ex instanceof CurrencyMismatchException) {
-            return problem(422, "Currency Mismatch", ex.getMessage());
-        }
-        if (ex instanceof WalletNotActiveException) {
-            return problem(422, "Wallet Not Active", ex.getMessage());
-        }
-        if (ex instanceof IdempotencyConflictException) {
-            return problem(409, "Idempotency Conflict", ex.getMessage());
-        }
-        if (ex instanceof AlreadyReversedException) {
-            return problem(422, "Already Reversed", ex.getMessage());
-        }
-        if (ex instanceof NotFoundException) {
-            return problem(404, "Not Found", ex.getMessage());
-        }
         if (ex instanceof ConstraintViolationException cve) {
             String detail = cve.getConstraintViolations().stream()
                 .map(v -> v.getPropertyPath() + ": " + v.getMessage())
@@ -39,8 +36,11 @@ public class GlobalExceptionMapper implements ExceptionMapper<Throwable> {
                 .orElse("Validation failed");
             return problem(400, "Validation Error", detail);
         }
-        if (ex instanceof jakarta.ws.rs.BadRequestException) {
-            return problem(400, "Bad Request", ex.getMessage());
+        for (var entry : ERRORS.entrySet()) {
+            if (entry.getKey().isInstance(ex)) {
+                ErrorDef def = entry.getValue();
+                return problem(def.status(), def.title(), ex.getMessage());
+            }
         }
         return problem(500, "Internal Server Error", "An unexpected error occurred");
     }
