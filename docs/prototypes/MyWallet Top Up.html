@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MyWallet — Top Up</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = { theme: { extend: {
+    fontFamily: {
+      sans: ['Geist', 'system-ui', 'ui-sans-serif'],
+      mono: ['Geist Mono', 'ui-monospace', 'monospace'],
+    },
+  } } }
+</script>
+<style>
+  html, body { background: #f8fafc; }
+  body { font-family: 'Geist', system-ui, sans-serif; color: #0f172a; -webkit-font-smoothing: antialiased; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  :where(button, a, input, select, textarea):focus { outline: none; }
+  :where(button, a, input, select, textarea):focus-visible {
+    outline: 2px solid #4f46e5;
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  /* ===== Reused keyframes ===== */
+  @keyframes circle-pop {
+    0%   { transform: scale(0); opacity: 0; }
+    60%  { transform: scale(1.08); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes ring-ping {
+    0%   { transform: scale(0.8); opacity: 0.55; }
+    100% { transform: scale(2.2); opacity: 0; }
+  }
+  @keyframes check-draw {
+    0%   { stroke-dashoffset: 36; }
+    100% { stroke-dashoffset: 0; }
+  }
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .success-circle    { animation: circle-pop 360ms cubic-bezier(.2,.9,.3,1.2) both; }
+  .success-ring      { animation: ring-ping 900ms cubic-bezier(.2,.7,.2,1) 120ms both; }
+  .success-check     { stroke-dasharray: 36; stroke-dashoffset: 36; animation: check-draw 360ms ease-out 240ms forwards; }
+  .fade-up-1         { animation: fade-up 320ms ease-out 200ms both; }
+  .fade-up-2         { animation: fade-up 320ms ease-out 280ms both; }
+  .fade-up-3         { animation: fade-up 320ms ease-out 360ms both; }
+  .fade-up-4         { animation: fade-up 320ms ease-out 440ms both; }
+  .fade-up-step      { animation: fade-up 220ms cubic-bezier(.2,.7,.2,1) both; }
+
+  /* ===== Toast ===== */
+  @keyframes toast-in  { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @keyframes toast-out { from { transform: translateY(0); opacity: 1; }     to { transform: translateY(-100%); opacity: 0; } }
+  .toast-enter { animation: toast-in 200ms ease-out both; }
+  .toast-exit  { animation: toast-out 150ms ease-in both; }
+  @keyframes progress { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  .progress-fill { transform-origin: left center; animation: progress var(--toast-dur, 4000ms) linear forwards; }
+  .progress-paused .progress-fill { animation-play-state: paused; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+/* ================== Helpers ================== */
+const fmtMoney = (n, currency = 'USD') => {
+  if (currency === 'VND') return `₫${new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.abs(n))}`;
+  const sym = { USD: '$', EUR: '€', GBP: '£' }[currency] ?? '';
+  return `${sym}${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(n))}`;
+};
+const uuid = () => {
+  const hex = (n) => Math.floor(Math.random()*16**n).toString(16).padStart(n,'0');
+  return `${hex(8)}-${hex(4)}-4${hex(3)}-${(8+Math.floor(Math.random()*4)).toString(16)}${hex(3)}-${hex(12)}`;
+};
+const formatNow = () => {
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const d = new Date();
+  const pad = (x) => String(x).padStart(2,'0');
+  const h = d.getHours();
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  const ampm = h < 12 ? 'AM' : 'PM';
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} · ${hh}:${pad(d.getMinutes())} ${ampm}`;
+};
+
+/* ================== Icons ================== */
+const Icon = {
+  Logo: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" {...p}>
+      <rect x="2" y="6" width="20" height="14" rx="3" fill="#4f46e5"/>
+      <rect x="15" y="11" width="6" height="4" rx="1" fill="#a5b4fc"/>
+      <circle cx="18" cy="13" r="0.9" fill="#3730a3"/>
+      <path d="M2 9c2-2 6-3 10-3s8 1 10 3" stroke="#6366f1" strokeWidth="0.6" fill="none"/>
+    </svg>
+  ),
+  ArrowLeft:  (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M13 8H3M7 4L3 8l4 4"/></svg>),
+  ArrowRight: (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 8h10M9 4l4 4-4 4"/></svg>),
+  ArrowDown:  (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 3v10M4 9l4 4 4-4"/></svg>),
+  Check:      (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>),
+  X:          (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" {...p}><path d="M4 4l8 8M12 4l-8 8"/></svg>),
+  Refresh:    (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M13.5 8a5.5 5.5 0 11-1.7-3.95"/><path d="M13.5 2.5V5h-2.5"/></svg>),
+  Eye:        (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.5"/></svg>),
+  Bug:        (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="4.5" y="5.5" width="7" height="7" rx="3"/><path d="M2 8h2.5M11.5 8H14M6 4l-1-1.5M10 4l1-1.5M5 13l-1.5 1M11 13l1.5 1"/></svg>),
+  Warn:       (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 2l6 11H2L8 2z"/><path d="M8 6.5v3"/><circle cx="8" cy="11.2" r=".5" fill="currentColor" stroke="none"/></svg>),
+  Stripe:     (p)=>(<svg viewBox="0 0 24 24" {...p}><rect width="24" height="24" rx="5" fill="#635bff"/><path d="M11 8.7c0-.6.5-.85 1.3-.85 1.2 0 2.6.36 3.7.95V5.6c-1.3-.5-2.5-.7-3.7-.7-3 0-5 1.55-5 4.15 0 4.05 5.6 3.4 5.6 5.15 0 .7-.6.95-1.4.95-1.3 0-3-.55-4.2-1.25v3.25c1.3.55 2.7.8 4.2.8 3.1 0 5.2-1.5 5.2-4.15 0-4.4-5.7-3.6-5.7-5.1z" fill="#fff"/></svg>),
+  Bank:       (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M2 6L8 3l6 3M3 6v6M13 6v6M6 6v6M10 6v6M2 13h12"/></svg>),
+  Card:       (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M2 7h12M4.5 10.5h2"/></svg>),
+  Apple:      (p)=>(<svg viewBox="0 0 16 16" fill="currentColor" {...p}><path d="M11.6 8.4c0-2 1.6-3 1.7-3-1-1.4-2.4-1.6-2.9-1.6-1.2-.1-2.4.7-3 .7-.6 0-1.6-.7-2.6-.7-1.4 0-2.6.8-3.3 2.1-1.4 2.4-.4 6 1 8 .7 1 1.5 2 2.6 2 1 0 1.4-.7 2.7-.7 1.2 0 1.6.7 2.7.7 1.1 0 1.8-1 2.5-2 .8-1.1 1.1-2.2 1.1-2.3-.1 0-2.1-.8-2.1-3.2zM9.6 2.3c.5-.6 1-1.6 1-2.3-.7 0-1.6.5-2.2 1.1-.5.5-.9 1.4-.8 2.3.8.1 1.6-.4 2-1.1z"/></svg>),
+};
+
+/* ================== Primitives ================== */
+const Btn = ({ variant='primary', size='md', children, className='', ...rest }) => {
+  const sizes = { sm:'h-9 px-3 text-sm', md:'h-10 px-4 text-sm', lg:'h-11 px-5 text-[15px]' };
+  const variants = {
+    primary:   'bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600 disabled:bg-indigo-300 disabled:border-indigo-300 disabled:cursor-not-allowed',
+    secondary: 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200',
+    outline:   'bg-white text-slate-700 hover:bg-slate-50 border border-slate-300 disabled:text-slate-400 disabled:cursor-not-allowed',
+    danger:    'bg-rose-600 text-white hover:bg-rose-700 border border-rose-600',
+    ghost:     'bg-transparent text-slate-600 hover:bg-slate-100 border border-transparent',
+  };
+  return (
+    <button className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition-colors ${sizes[size]} ${variants[variant]} ${className}`} {...rest}>{children}</button>
+  );
+};
+
+const Field = ({ label, hint, optional, children, error }) => (
+  <div>
+    <div className="flex items-center justify-between mb-1.5">
+      <label className="text-xs font-medium text-slate-700">
+        {label}
+        {optional && <span className="text-slate-400 font-normal ml-1.5">(optional)</span>}
+      </label>
+      {hint && <span className="text-[11px] text-slate-400">{hint}</span>}
+    </div>
+    {children}
+    {error && <div className="text-[12px] text-rose-600 mt-1.5 flex items-start gap-1"><Icon.Warn className="w-3.5 h-3.5 mt-0.5 shrink-0"/><span>{error}</span></div>}
+  </div>
+);
+
+const TextInput = React.forwardRef(({ className='', ...rest }, ref) => (
+  <input ref={ref} className={`h-10 w-full px-3 text-sm bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-400 ${className}`} {...rest}/>
+));
+
+const Card = ({ children, className='' }) => (
+  <div className={`bg-white border border-slate-200 rounded-xl ${className}`}>{children}</div>
+);
+
+/* ================== Mock data ================== */
+const WALLETS = [
+  { id: 'wlt_8f3a1c', label: 'Main USD',    currency: 'USD', balance: 12480.53, available: 12160.53, status: 'ACTIVE' },
+  { id: 'wlt_aa17d9', label: 'Vietnam VND', currency: 'VND', balance: 18540000, available: 18540000, status: 'ACTIVE' },
+  { id: 'wlt_bd4c20', label: 'Payouts',     currency: 'USD', balance:     0.00, available:     0.00, status: 'FROZEN' },
+];
+
+const PRESETS = {
+  USD: [50, 100, 250, 500],
+  VND: [500000, 1000000, 2500000, 5000000],
+  EUR: [50, 100, 250, 500],
+  GBP: [50, 100, 250, 500],
+};
+
+const PAYMENT_METHODS = [
+  { id: 'stripe',  label: 'Stripe',        sub: '•••• 4242 · Visa',         icon: Icon.Card,   accent: 'text-indigo-700 bg-indigo-50' },
+  { id: 'ach',     label: 'ACH (Plaid)',   sub: 'Chase Bank · ••3491',      icon: Icon.Bank,   accent: 'text-emerald-700 bg-emerald-50' },
+  { id: 'applepay',label: 'Apple Pay',     sub: 'iPhone · Touch ID',        icon: Icon.Apple,  accent: 'text-slate-700 bg-slate-100' },
+];
+
+/* ================== Toast system ================== */
+const ToastIcons = {
+  success: (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>),
+  error:   (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" {...p}><path d="M4 4l8 8M12 4l-8 8"/></svg>),
+  warning: (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 4.5v4.5"/><circle cx="8" cy="11.5" r=".6" fill="currentColor" stroke="none"/></svg>),
+};
+const ToastMeta = {
+  success: { iconBg: 'bg-emerald-500', barBg: 'bg-indigo-600' },
+  error:   { iconBg: 'bg-rose-600',    barBg: 'bg-rose-600' },
+  warning: { iconBg: 'bg-amber-500',   barBg: 'bg-amber-500' },
+};
+let _toastId = 0;
+const useToasts = (max = 3) => {
+  const [toasts, setToasts] = useState([]);
+  const push = useCallback((t) => {
+    const id = ++_toastId;
+    const duration = t.duration ?? 4000;
+    const next = { id, kind: t.kind ?? 'success', title: t.title, subtitle: t.subtitle, duration, endsAt: Date.now() + duration };
+    setToasts(prev => [...prev, next].slice(-max));
+  }, [max]);
+  const dismiss = useCallback((id) => setToasts(prev => prev.filter(t => t.id !== id)), []);
+  return { toasts, push, dismiss };
+};
+const ToastCard = ({ toast, onDismiss }) => {
+  const I = ToastIcons[toast.kind];
+  const meta = ToastMeta[toast.kind];
+  const [exiting, setExiting] = useState(false);
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    if (paused) return;
+    const remaining = toast.endsAt - Date.now();
+    if (remaining <= 0) { req(); return; }
+    const t = setTimeout(req, remaining);
+    return () => clearTimeout(t);
+    function req() { setExiting(true); setTimeout(onDismiss, 150); }
+  }, [paused, toast.endsAt]);
+  return (
+    <div
+      role="status"
+      onMouseEnter={()=>{ setPaused(true); toast.endsAt = Date.now() + toast.duration; }}
+      onMouseLeave={()=>{ setPaused(false); toast.endsAt = Date.now() + toast.duration; }}
+      className={`pointer-events-auto w-full bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden ${exiting ? 'toast-exit' : 'toast-enter'} ${paused ? 'progress-paused' : ''}`}
+    >
+      <div className="flex items-start gap-3 px-3 py-2.5">
+        <div className={`w-4 h-4 mt-0.5 rounded-full ${meta.iconBg} text-white grid place-items-center shrink-0`}>
+          <I className="w-2.5 h-2.5"/>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-slate-900 leading-tight">{toast.title}</div>
+          {toast.subtitle && <div className="text-xs text-slate-500 mt-0.5 truncate">{toast.subtitle}</div>}
+        </div>
+        <button onClick={() => { setExiting(true); setTimeout(onDismiss, 150); }} className="text-slate-400 hover:text-slate-700 -mr-1 -mt-0.5 w-6 h-6 grid place-items-center rounded hover:bg-slate-100" aria-label="Dismiss"><Icon.X className="w-3.5 h-3.5"/></button>
+      </div>
+      <div className="h-[2px] bg-slate-100">
+        <div className={`h-full ${meta.barBg} progress-fill`} style={{ '--toast-dur': `${toast.duration}ms` }}/>
+      </div>
+    </div>
+  );
+};
+const ToastHost = ({ toasts, dismiss }) => (
+  <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[320px] flex flex-col gap-2 pointer-events-none" aria-live="polite" aria-atomic="false">
+    {toasts.map(t => <ToastCard key={t.id} toast={t} onDismiss={() => dismiss(t.id)}/>)}
+  </div>
+);
+
+/* ================== AppBar (reused from consumer page) ================== */
+const AppBar = ({ onBack }) => (
+  <header className="bg-white border-b border-slate-200">
+    <div className="max-w-3xl mx-auto px-4 h-14 flex items-center">
+      <button onClick={onBack} className="-ml-2 h-8 px-2 rounded-md text-slate-600 hover:bg-slate-100 inline-flex items-center gap-1.5 text-sm">
+        <Icon.ArrowLeft className="w-4 h-4"/>
+        Dashboard
+      </button>
+      <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+        <Icon.Logo className="w-5 h-5"/>
+        <span className="font-semibold text-[14px] tracking-tight">MyWallet</span>
+      </div>
+      <div className="ml-auto text-sm text-slate-500">Hi, <span className="text-slate-900 font-medium">john_doe</span></div>
+    </div>
+  </header>
+);
+
+/* ================== Step dots ================== */
+const StepDots = ({ step, total = 3 }) => (
+  <div className="flex items-center justify-center gap-2 mb-6">
+    {Array.from({ length: total }).map((_, i) => {
+      const filled = i <= step;
+      const isCurrent = i === step;
+      return (
+        <React.Fragment key={i}>
+          <div className={`rounded-full transition-all ${filled ? (i === total-1 && step >= total-1 ? 'bg-emerald-600' : 'bg-indigo-600') : 'bg-slate-200'} ${isCurrent ? 'w-3 h-3' : 'w-2.5 h-2.5'}`}/>
+          {i < total-1 && <div className={`h-px w-8 transition-colors ${i < step ? 'bg-indigo-600' : 'bg-slate-200'}`}/>}
+        </React.Fragment>
+      );
+    })}
+  </div>
+);
+
+/* ================== STEP 0 — Select wallet ================== */
+const Step0Select = ({ wallets, selectedId, onSelect, onContinue }) => {
+  return (
+    <div className="fade-up-step">
+      <Card className="p-5">
+        <div className="text-[11px] uppercase tracking-wider text-slate-500 font-medium mb-2">Choose a wallet to top up</div>
+        <div className="space-y-2">
+          {wallets.map(w => {
+            const active = selectedId === w.id;
+            const frozen = w.status === 'FROZEN';
+            return (
+              <button
+                key={w.id}
+                disabled={frozen}
+                onClick={() => onSelect(w.id)}
+                className={`w-full text-left border rounded-xl px-3.5 py-3 flex items-center gap-3 transition-colors ${active ? 'border-indigo-500 ring-2 ring-indigo-100 bg-indigo-50/40' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'} ${frozen ? 'opacity-60 cursor-not-allowed' : ''}`}
+              >
+                <div className={`w-10 h-10 rounded-lg grid place-items-center font-mono text-[11px] font-semibold shrink-0 ${w.currency==='USD' ? 'bg-indigo-100 text-indigo-700' : w.currency==='VND' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
+                  {w.currency}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-slate-900">{w.label}</span>
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${frozen ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${frozen ? 'bg-slate-400' : 'bg-emerald-500'}`}/>
+                      {w.status}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-mono mt-0.5 truncate">{w.id}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-sm font-semibold num text-slate-900">{fmtMoney(w.available, w.currency)}</div>
+                  <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mt-0.5">Available</div>
+                </div>
+                <div className={`w-4 h-4 rounded-full border ml-1 shrink-0 grid place-items-center ${active ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 bg-white'}`}>
+                  {active && <Icon.Check className="w-2.5 h-2.5 text-white"/>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-5">
+          <Btn variant="primary" size="lg" className="w-full" disabled={!selectedId} onClick={onContinue}>
+            Continue <Icon.ArrowRight className="w-4 h-4"/>
+          </Btn>
+        </div>
+      </Card>
+
+      <div className="text-center text-[11px] text-slate-500 mt-3">
+        Don't see your wallet? <button className="text-indigo-600 hover:text-indigo-800 font-medium">Create a new wallet</button>
+      </div>
+    </div>
+  );
+};
+
+/* ================== STEP 1 — Amount + ref + (hidden) idempotency ================== */
+const Step1Amount = ({ wallet, amount, setAmount, externalRef, setExternalRef, idempotencyKey, setIdempotencyKey, method, setMethod, showIdemDebug, setShowIdemDebug, onBack, onContinue }) => {
+  const amountNum = parseFloat(amount) || 0;
+  const presets = PRESETS[wallet.currency] || PRESETS.USD;
+
+  // Validation
+  const dec = (amount.split('.')[1] || '').length;
+  const tooManyDecimals = dec > 2;
+  const isNegative = amount.startsWith('-');
+  const isZero = amountNum <= 0 && amount.length > 0;
+  const aboveCap = amountNum > 1_000_000;
+
+  const error =
+    isNegative ? 'Amount must be positive.' :
+    tooManyDecimals ? 'Use at most 2 decimal places.' :
+    aboveCap ? `Maximum single top-up is ${fmtMoney(1_000_000, wallet.currency)}.` :
+    null;
+
+  const canContinue = amountNum > 0 && !error;
+
+  return (
+    <div className="fade-up-step space-y-4">
+      <Card className="p-5">
+        <Field label="From">
+          <div className="h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center gap-3">
+            <div className={`w-6 h-6 rounded grid place-items-center font-mono text-[10px] font-semibold ${wallet.currency==='USD' ? 'bg-indigo-100 text-indigo-700' : wallet.currency==='VND' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>{wallet.currency}</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium text-slate-800 truncate">{wallet.label}</div>
+            </div>
+            <div className="text-xs text-slate-500 num shrink-0">{fmtMoney(wallet.available, wallet.currency)} avail.</div>
+          </div>
+        </Field>
+
+        <div className="mt-4">
+          <Field label="Amount" hint="positive · up to 2 decimal places" error={error}>
+            <div className="relative">
+              <input
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => {
+                  // allow digits, one dot, no leading negative
+                  let v = e.target.value.replace(/[^\d.]/g, '');
+                  const parts = v.split('.');
+                  if (parts.length > 2) v = parts[0] + '.' + parts.slice(1).join('');
+                  setAmount(v);
+                }}
+                placeholder="0.00"
+                className={`h-14 w-full pl-3 pr-20 text-2xl font-semibold num bg-white border rounded-lg focus:ring-2 ${error ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-100 text-rose-700' : 'border-slate-200 focus:border-indigo-500 focus:ring-indigo-100 text-slate-900'}`}
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-slate-500">
+                <span className="text-xs font-medium font-mono tracking-wider bg-slate-100 px-1.5 py-0.5 rounded">{wallet.currency}</span>
+              </div>
+            </div>
+          </Field>
+
+          <div className="mt-2 grid grid-cols-4 gap-1.5">
+            {presets.map(v => (
+              <button key={v} type="button" onClick={() => setAmount(String(v))} className={`h-8 rounded-md border text-xs font-medium num transition-colors ${parseFloat(amount)===v ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}>
+                {wallet.currency==='VND' ? (v >= 1_000_000 ? `${v/1_000_000}M` : `${v/1000}k`) : `${fmtMoney(v, wallet.currency)}`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <Field label="External reference" optional hint="payment receipt ID, etc.">
+            <TextInput
+              value={externalRef}
+              onChange={e=>setExternalRef(e.target.value)}
+              placeholder="e.g. stripe_pi_3OAB29Hk or BANK-2026-05-21-7714"
+              maxLength={64}
+              className="font-mono text-[12.5px]"
+            />
+          </Field>
+        </div>
+
+        {/* Payment method (visual, for prototype completeness) */}
+        <div className="mt-4">
+          <Field label="Payment method">
+            <div className="grid grid-cols-3 gap-2">
+              {PAYMENT_METHODS.map(m => {
+                const I = m.icon;
+                const active = method === m.id;
+                return (
+                  <button key={m.id} type="button" onClick={()=>setMethod(m.id)} className={`text-left border rounded-lg p-2.5 transition-colors ${active ? 'border-indigo-500 ring-2 ring-indigo-100 bg-indigo-50/40' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}>
+                    <div className="flex items-center justify-between">
+                      <div className={`w-6 h-6 rounded grid place-items-center ${m.accent}`}>
+                        <I className="w-3.5 h-3.5"/>
+                      </div>
+                      {active && <div className="w-4 h-4 rounded-full bg-indigo-600 grid place-items-center"><Icon.Check className="w-2.5 h-2.5 text-white"/></div>}
+                    </div>
+                    <div className="text-[12px] font-medium text-slate-800 mt-1.5">{m.label}</div>
+                    <div className="text-[10px] text-slate-500 truncate">{m.sub}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+        </div>
+
+        {/* Hidden idempotency key — debug peek */}
+        <div className="mt-4 pt-3 border-t border-slate-100">
+          <button onClick={() => setShowIdemDebug(s => !s)} className="text-[11px] text-slate-500 hover:text-slate-800 inline-flex items-center gap-1">
+            <Icon.Bug className="w-3.5 h-3.5"/>
+            {showIdemDebug ? 'Hide' : 'Show'} idempotency key (debug)
+          </button>
+          {showIdemDebug && (
+            <div className="mt-2 flex items-center gap-1.5">
+              <div className="flex-1 h-8 px-2 bg-slate-50 border border-slate-200 rounded font-mono text-[11px] text-slate-600 flex items-center truncate">{idempotencyKey}</div>
+              <button onClick={() => setIdempotencyKey(uuid())} className="h-8 w-8 grid place-items-center border border-slate-200 rounded hover:bg-slate-50 text-slate-500" title="Regenerate">
+                <Icon.Refresh className="w-3.5 h-3.5"/>
+              </button>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Btn variant="outline" size="lg" onClick={onBack}><Icon.ArrowLeft className="w-4 h-4"/>Back</Btn>
+        <Btn variant="primary" size="lg" disabled={!canContinue} onClick={onContinue}>Review <Icon.ArrowRight className="w-4 h-4"/></Btn>
+      </div>
+    </div>
+  );
+};
+
+/* ================== STEP 2 — Confirm ================== */
+const Step2Confirm = ({ wallet, amount, externalRef, idempotencyKey, method, submitting, lastError, onBack, onConfirm, onSimulateFailure, simulateFailure }) => {
+  const amountNum = parseFloat(amount) || 0;
+  const newBalance = wallet.available + amountNum;
+  const methodMeta = PAYMENT_METHODS.find(m => m.id === method);
+  return (
+    <div className="fade-up-step space-y-4">
+      <Card>
+        <div className="px-5 py-4 border-b border-slate-100 bg-gradient-to-b from-indigo-50/50 to-transparent rounded-t-xl">
+          <div className="text-[11px] uppercase tracking-wider text-indigo-700/80 font-medium">You're topping up</div>
+          <div className="flex items-baseline gap-1.5 mt-1">
+            <span className="text-3xl font-semibold tracking-tight num text-slate-900">{fmtMoney(amountNum, wallet.currency)}</span>
+            <span className="text-sm font-medium text-slate-500 font-mono">{wallet.currency}</span>
+          </div>
+          <div className="text-xs text-slate-600 mt-1">
+            into <span className="text-slate-900 font-medium">{wallet.label}</span>
+          </div>
+        </div>
+
+        <dl className="divide-y divide-slate-100 text-sm">
+          <SumRow label="Wallet">
+            <div className="text-right">
+              <div className="text-slate-800 font-medium">{wallet.label}</div>
+              <div className="text-[11px] text-slate-500 font-mono">{wallet.id}</div>
+            </div>
+          </SumRow>
+          <SumRow label="Method">
+            <div className="text-right flex items-center justify-end gap-2">
+              {methodMeta && <>
+                <span className="text-slate-800 font-medium">{methodMeta.label}</span>
+                <span className="text-[11px] text-slate-500">{methodMeta.sub}</span>
+              </>}
+            </div>
+          </SumRow>
+          <SumRow label="Amount">
+            <span className="num font-medium text-slate-900">{fmtMoney(amountNum, wallet.currency)}</span>
+          </SumRow>
+          <SumRow label="Fee">
+            <span className="num text-slate-500">{fmtMoney(0, wallet.currency)}</span>
+          </SumRow>
+          {externalRef && (
+            <SumRow label="External ref">
+              <span className="font-mono text-[12px] text-slate-700 break-all text-right max-w-[200px]">{externalRef}</span>
+            </SumRow>
+          )}
+          <SumRow label="New balance" emphasize>
+            <span className="num font-semibold text-emerald-700">{fmtMoney(newBalance, wallet.currency)}</span>
+          </SumRow>
+        </dl>
+      </Card>
+
+      {lastError && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-[13px] text-rose-700 flex items-start gap-2 fade-up-step">
+          <Icon.Warn className="w-4 h-4 mt-0.5 shrink-0"/>
+          <div className="flex-1">
+            <div className="font-medium">Top-up failed</div>
+            <div className="text-[12px] text-rose-600/90 mt-0.5">{lastError}</div>
+          </div>
+          <button onClick={onConfirm} className="text-[12px] font-medium text-rose-700 hover:text-rose-900 underline-offset-2 hover:underline">Retry</button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <Btn variant="outline" size="lg" onClick={onBack} disabled={submitting}><Icon.ArrowLeft className="w-4 h-4"/>Back</Btn>
+        <Btn variant="primary" size="lg" onClick={onConfirm} disabled={submitting}>
+          {submitting ? <><Spinner/>Processing…</> : <>Confirm Top Up<Icon.ArrowRight className="w-4 h-4"/></>}
+        </Btn>
+      </div>
+
+      <label className="flex items-center justify-center gap-2 text-[11px] text-slate-500 select-none">
+        <input type="checkbox" checked={simulateFailure} onChange={e=>onSimulateFailure(e.target.checked)} className="w-3.5 h-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500"/>
+        <span>Simulate API failure on next confirm <span className="text-slate-400">(prototype only)</span></span>
+      </label>
+
+      <div className="text-center text-[10px] text-slate-400 font-mono">
+        POST /api/v1/wallets/top-up · idempotency-key: <span className="text-slate-500">{idempotencyKey.slice(0, 8)}…{idempotencyKey.slice(-4)}</span>
+      </div>
+    </div>
+  );
+};
+
+const SumRow = ({ label, children, emphasize }) => (
+  <div className={`flex items-start justify-between px-5 py-3 ${emphasize ? 'bg-slate-50' : ''}`}>
+    <dt className="text-[11px] uppercase tracking-wider text-slate-500 font-medium pt-0.5">{label}</dt>
+    <dd className="text-sm text-right min-w-0">{children}</dd>
+  </div>
+);
+
+const Spinner = () => (
+  <svg className="w-4 h-4 animate-spin" viewBox="0 0 16 16" fill="none">
+    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2"/>
+    <path d="M14 8a6 6 0 00-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+);
+
+/* ================== SUCCESS ================== */
+const SuccessScreen = ({ wallet, amount, externalRef, idempotencyKey, completedAt, onTopUpAgain, onDashboard }) => {
+  const amountNum = parseFloat(amount) || 0;
+  return (
+    <div className="space-y-4 fade-up-step">
+      <Card className="p-7">
+        {/* Animated check */}
+        <div className="flex justify-center mb-5">
+          <div className="relative w-16 h-16">
+            <span className="absolute inset-0 rounded-full bg-emerald-500 success-ring"/>
+            <div className="success-circle absolute inset-0 rounded-full bg-emerald-600 grid place-items-center">
+              <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path className="success-check" d="M5 12.5l4.5 4.5L19 7.5"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="text-center mb-6 fade-up-1">
+          <div className="text-xl font-semibold tracking-tight text-slate-900">Top-up Successful</div>
+          <div className="text-sm text-slate-500 mt-1.5">Funds are now available in your wallet.</div>
+        </div>
+
+        <div className="rounded-xl bg-slate-50 border border-slate-200 divide-y divide-slate-200 fade-up-2">
+          <SumRow label="Wallet">
+            <div className="text-right">
+              <div className="text-slate-800 font-medium">{wallet.label}</div>
+              <div className="text-[11px] text-slate-500 font-mono">{wallet.id}</div>
+            </div>
+          </SumRow>
+          <SumRow label="Amount">
+            <span className="text-base font-bold num text-emerald-600">+{fmtMoney(amountNum, wallet.currency)} <span className="text-xs text-emerald-600/80 font-medium font-mono">{wallet.currency}</span></span>
+          </SumRow>
+          <SumRow label="Reference">
+            <span className="font-mono text-[12px] text-slate-700 break-all text-right max-w-[220px]">{externalRef || '—'}</span>
+          </SumRow>
+          <SumRow label="New balance">
+            <span className="num font-medium text-slate-900">{fmtMoney(wallet.available + amountNum, wallet.currency)}</span>
+          </SumRow>
+          <SumRow label="Time">
+            <span className="num text-slate-700">{completedAt}</span>
+          </SumRow>
+          <SumRow label="Transaction">
+            <span className="font-mono text-[12px] text-slate-700">tx_{idempotencyKey.slice(0,8)}</span>
+          </SumRow>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mt-6 fade-up-3">
+          <Btn variant="outline" size="lg" onClick={onTopUpAgain}>Top Up Again</Btn>
+          <Btn variant="primary" size="lg" onClick={onDashboard}>Go to Dashboard</Btn>
+        </div>
+
+        <div className="text-center text-[11px] text-slate-500 mt-4 fade-up-4">
+          A receipt has been emailed to <span className="text-slate-700">john.doe@example.com</span>.
+        </div>
+      </Card>
+    </div>
+  );
+};
+
+/* ================== TOP-UP PAGE ================== */
+const TopUpPage = ({ initialWalletId, onNavigate, pushToast }) => {
+  const [step, setStep] = useState(0); // 0 select, 1 amount, 2 confirm, 3 success
+  const [walletId, setWalletId] = useState(initialWalletId || (WALLETS.length === 1 ? WALLETS[0].id : ''));
+  const [amount, setAmount] = useState('');
+  const [externalRef, setExternalRef] = useState('');
+  const [idempotencyKey, setIdempotencyKey] = useState(() => uuid());
+  const [method, setMethod] = useState('stripe');
+  const [showIdemDebug, setShowIdemDebug] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [lastError, setLastError] = useState(null);
+  const [simulateFailure, setSimulateFailure] = useState(false);
+  const [completedAt, setCompletedAt] = useState('');
+
+  // Pre-select if single wallet (already handled above), or if route param
+  useEffect(() => {
+    const eligible = WALLETS.filter(w => w.status === 'ACTIVE');
+    if (!walletId && eligible.length === 1) {
+      setWalletId(eligible[0].id);
+      // could auto-advance, but spec says "Pre-select if only 1 wallet" — staying on step 0 with pre-selection.
+    }
+  }, []);
+
+  const wallet = WALLETS.find(w => w.id === walletId) || WALLETS[0];
+
+  const reset = (preserveWallet = false) => {
+    setStep(0);
+    setAmount('');
+    setExternalRef('');
+    setIdempotencyKey(uuid()); // regenerate per spec
+    setLastError(null);
+    setSimulateFailure(false);
+    setSubmitting(false);
+    if (!preserveWallet) setWalletId(initialWalletId || (WALLETS.length === 1 ? WALLETS[0].id : ''));
+  };
+
+  const handleConfirm = () => {
+    setSubmitting(true);
+    setLastError(null);
+    // Mock POST /api/v1/wallets/top-up with 1s delay
+    setTimeout(() => {
+      if (simulateFailure) {
+        // Pick a deterministic-feeling server error
+        const errors = [
+          'Payment authorization declined by issuer.',
+          'Daily top-up limit reached for this method.',
+          'Service temporarily unavailable. Please retry.',
+        ];
+        const msg = errors[Math.floor(Math.random() * errors.length)];
+        setSubmitting(false);
+        setLastError(msg);
+        // Per spec: error toast + stay on confirm step
+        pushToast({ kind: 'error', title: 'Top-up failed', subtitle: msg });
+        return;
+      }
+      setSubmitting(false);
+      setCompletedAt(formatNow());
+      setStep(3);
+      pushToast({
+        kind: 'success',
+        title: 'Top-up received',
+        subtitle: `+${fmtMoney(parseFloat(amount), wallet.currency)} credited to ${wallet.label}`,
+      });
+    }, 1000);
+  };
+
+  const stepLabels = ['Select wallet', 'Enter amount', 'Review & confirm', 'Success'];
+
+  return (
+    <div className="max-w-md mx-auto px-4 pt-6 pb-12">
+      {/* Page header */}
+      <div className="flex items-center mb-1">
+        <button onClick={() => step > 0 && step < 3 ? setStep(s => s - 1) : onNavigate('/dashboard')} className="-ml-2 h-8 px-2 rounded-md text-slate-600 hover:bg-slate-100 inline-flex items-center gap-1.5 text-sm">
+          <Icon.ArrowLeft className="w-4 h-4"/>
+          {step > 0 && step < 3 ? 'Previous step' : 'Cancel'}
+        </button>
+        <div className="ml-auto text-[11px] text-slate-400 font-mono">/top-up{initialWalletId ? `?walletId=${initialWalletId}`:''}</div>
+      </div>
+
+      <div className="text-center mt-2 mb-1">
+        <div className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">{step < 3 ? `Step ${step+1} of 3` : 'Done'}</div>
+        <div className="text-xl font-semibold tracking-tight mt-1">{stepLabels[step]}</div>
+      </div>
+      <StepDots step={step} total={3}/>
+
+      {step === 0 && (
+        <Step0Select
+          wallets={WALLETS}
+          selectedId={walletId}
+          onSelect={setWalletId}
+          onContinue={() => setStep(1)}
+        />
+      )}
+      {step === 1 && (
+        <Step1Amount
+          wallet={wallet}
+          amount={amount} setAmount={setAmount}
+          externalRef={externalRef} setExternalRef={setExternalRef}
+          idempotencyKey={idempotencyKey} setIdempotencyKey={setIdempotencyKey}
+          method={method} setMethod={setMethod}
+          showIdemDebug={showIdemDebug} setShowIdemDebug={setShowIdemDebug}
+          onBack={() => setStep(0)}
+          onContinue={() => setStep(2)}
+        />
+      )}
+      {step === 2 && (
+        <Step2Confirm
+          wallet={wallet}
+          amount={amount}
+          externalRef={externalRef}
+          idempotencyKey={idempotencyKey}
+          method={method}
+          submitting={submitting}
+          lastError={lastError}
+          simulateFailure={simulateFailure}
+          onSimulateFailure={setSimulateFailure}
+          onBack={() => setStep(1)}
+          onConfirm={handleConfirm}
+        />
+      )}
+      {step === 3 && (
+        <SuccessScreen
+          wallet={wallet}
+          amount={amount}
+          externalRef={externalRef}
+          idempotencyKey={idempotencyKey}
+          completedAt={completedAt}
+          onTopUpAgain={() => reset(true)}
+          onDashboard={() => onNavigate('/dashboard')}
+        />
+      )}
+    </div>
+  );
+};
+
+/* ================== Mock router shell ================== */
+const Dashboard = ({ onNavigate }) => (
+  <div className="max-w-3xl mx-auto px-4 pt-6 pb-12">
+    <div className="text-[22px] font-semibold tracking-tight">Good afternoon, John</div>
+    <div className="text-sm text-slate-500 mt-0.5 mb-5">Tuesday, May 21, 2026 · You have 2 active wallets.</div>
+
+    <div className="grid grid-cols-2 gap-3">
+      {WALLETS.filter(w => w.status === 'ACTIVE').map(w => (
+        <Card key={w.id} className="p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">{w.label}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5 font-mono">{w.id}</div>
+            </div>
+            <div className="text-[11px] font-medium text-slate-600 bg-slate-100 rounded px-1.5 py-0.5 font-mono">{w.currency}</div>
+          </div>
+          <div className="mt-3">
+            <div className="text-2xl font-semibold tracking-tight num text-slate-900">{fmtMoney(w.balance, w.currency)}</div>
+            <div className="text-xs text-slate-500 mt-0.5">
+              Available <span className="num text-slate-700 font-medium">{fmtMoney(w.available, w.currency)}</span>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Btn variant="outline" size="sm" onClick={() => onNavigate(`/top-up?walletId=${w.id}`)}>
+              <Icon.ArrowDown className="w-3.5 h-3.5 text-emerald-600"/>Top Up
+            </Btn>
+            <Btn variant="primary" size="sm" onClick={() => onNavigate('/send')}>
+              <Icon.ArrowRight className="w-3.5 h-3.5"/>Send
+            </Btn>
+          </div>
+        </Card>
+      ))}
+    </div>
+
+    <div className="mt-6 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="text-sm font-semibold tracking-tight mb-1">Try the Top Up flow</div>
+      <div className="text-xs text-slate-500 mb-3">Each Dashboard wallet's "Top Up" button navigates to <code className="font-mono text-[11px] bg-slate-100 px-1 py-0.5 rounded text-slate-700">/top-up?walletId=…</code> so the right wallet is pre-selected.</div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Btn variant="secondary" size="sm" onClick={() => onNavigate('/top-up')}>Open /top-up (no preselect)</Btn>
+        <Btn variant="secondary" size="sm" onClick={() => onNavigate('/top-up?walletId=wlt_8f3a1c')}>Open with USD preselected</Btn>
+        <Btn variant="secondary" size="sm" onClick={() => onNavigate('/top-up?walletId=wlt_aa17d9')}>Open with VND preselected</Btn>
+      </div>
+    </div>
+  </div>
+);
+
+/* ================== App (mock router) ================== */
+const App = () => {
+  const { toasts, push, dismiss } = useToasts(3);
+  // Mock route state mirroring the in-app router; in the real app this is React Router.
+  const [route, setRoute] = useState({ path: '/top-up', query: { walletId: 'wlt_8f3a1c' } });
+
+  const navigate = (url) => {
+    const [path, qs] = url.split('?');
+    const query = {};
+    if (qs) qs.split('&').forEach(p => { const [k, v] = p.split('='); query[k] = decodeURIComponent(v || ''); });
+    setRoute({ path, query });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  return (
+    <>
+      <ToastHost toasts={toasts} dismiss={dismiss}/>
+      <AppBar onBack={() => navigate('/dashboard')}/>
+
+      {/* Tiny prototype nav */}
+      <div className="bg-white border-b border-slate-100">
+        <div className="max-w-3xl mx-auto px-4 py-1.5 flex items-center gap-1 text-[11px]">
+          <span className="text-slate-400 font-medium uppercase tracking-wider mr-1">Routes:</span>
+          {[
+            { p: '/dashboard',   l: 'Dashboard' },
+            { p: '/top-up',      l: '/top-up' },
+            { p: '/top-up?walletId=wlt_8f3a1c', l: '/top-up?USD' },
+            { p: '/top-up?walletId=wlt_aa17d9', l: '/top-up?VND' },
+            { p: '/send',        l: '/send (stub)' },
+            { p: '/history',     l: '/history (stub)' },
+          ].map(r => {
+            const active = (r.p === '/dashboard' && route.path === '/dashboard')
+              || (r.p.startsWith('/top-up') && route.path === '/top-up' && (
+                  r.p === '/top-up'
+                    ? !route.query.walletId
+                    : decodeURIComponent(r.p.split('=')[1] || '') === route.query.walletId
+                ))
+              || (r.p === '/send' && route.path === '/send')
+              || (r.p === '/history' && route.path === '/history');
+            return (
+              <button key={r.p} onClick={() => navigate(r.p)} className={`px-2 h-6 rounded font-mono transition-colors ${active ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}>
+                {r.l}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <main>
+        {route.path === '/dashboard' && <Dashboard onNavigate={navigate}/>}
+        {route.path === '/top-up' && (
+          <TopUpPage
+            key={`${route.query.walletId || 'none'}-${route.path}`}
+            initialWalletId={route.query.walletId}
+            onNavigate={navigate}
+            pushToast={push}
+          />
+        )}
+        {route.path === '/send' && (
+          <StubPage title="Send" body="The Send page lives here in the real app. Use the route bar above to jump back."/>
+        )}
+        {route.path === '/history' && (
+          <StubPage title="History" body="The History page lives here in the real app. Use the route bar above to jump back."/>
+        )}
+      </main>
+    </>
+  );
+};
+
+const StubPage = ({ title, body }) => (
+  <div className="max-w-md mx-auto px-4 pt-10 pb-12 text-center">
+    <div className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">Prototype stub</div>
+    <div className="text-xl font-semibold tracking-tight mt-1">{title}</div>
+    <div className="text-sm text-slate-500 mt-2">{body}</div>
+  </div>
+);
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

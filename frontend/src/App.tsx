@@ -3,6 +3,7 @@ import { useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/consumer/DashboardPage';
 import SendPage from './pages/consumer/SendPage';
+import TopUpPage from './pages/consumer/TopUpPage';
 import HistoryPage from './pages/consumer/HistoryPage';
 import AdminApp from './pages/AdminApp';
 
@@ -19,6 +20,7 @@ export default function App() {
 
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
       <Route path="/send"      element={<ProtectedRoute><SendPage /></ProtectedRoute>} />
+      <Route path="/top-up"    element={<ProtectedRoute><TopUpPage /></ProtectedRoute>} />
       <Route path="/history"   element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
 
       <Route path="/admin/*" element={<AdminApp />} />

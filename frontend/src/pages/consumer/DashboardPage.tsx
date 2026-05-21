@@ -40,7 +40,7 @@ function WalletCard({ w }: { w: WalletResponse }) {
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <Link
-          to="/send"
+          to={`/top-up?walletId=${w.id}`}
           className="h-9 px-3 text-sm inline-flex items-center justify-center gap-1.5 rounded-lg font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
         >
           <ArrowDown />Top Up

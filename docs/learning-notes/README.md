@@ -16,6 +16,9 @@ Notes extracted from building a production-grade Wallet + Double-Entry Ledger sy
 | [08](08_money_in_code.md) | **Money in Code** | `BigDecimal` vs `double`, `NUMERIC(19,4)`, `compareTo()` vs `equals()`, currency pairing |
 | [09](09_webhook_inbox_pattern.md) | **Webhook Inbox Pattern** | Inbox table, async processing, JSONB storage, `@JdbcTypeCode`, Quarkus `@Scheduled` |
 | [10](10_auth_future.md) | **Auth — Future Implementation** | Mock login → JWT/OIDC roadmap, password hashing, token storage, BOLA enforcement, migration checklist |
+| [11](11_server_sent_events.md) | **Server-Sent Events (SSE)** | Quarkus Reactive `Multi<String>`, CDI `AFTER_SUCCESS` observer, IO thread constraint, `CopyOnWriteArrayList` |
+| [12](12_tanstack_query_patterns.md) | **TanStack Query Patterns** | queryKey design, invalidation, `enabled` flag, stale-while-revalidate, anti-pattern `useEffect+fetch` |
+| [13](13_ddd_aggregate_boundaries.md) | **DDD Aggregate Boundaries** | Plain ID vs `@ManyToOne`, cross-aggregate queries, N+1 prevention, native SQL trade-off |
 
 ## How These Topics Connect
 
