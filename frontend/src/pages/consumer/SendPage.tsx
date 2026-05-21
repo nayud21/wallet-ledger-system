@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { useWallets, useTransfer } from '../../hooks/useWallets';
-import { useToast } from '../../context/ToastContext';
+import { useWallets, useTransfer, useRecentRecipients } from '../../hooks/useWallets';
 import ConsumerLayout from '../../components/consumer/ConsumerLayout';
 import { fmtMoney } from '../../utils/format';
+import { useToast } from '../../context/ToastContext';
 import { fetchWallet } from '../../api/wallets';
 import type { WalletResponse } from '../../types/api';
 
@@ -140,6 +140,8 @@ export default function SendPage() {
   const transfer = useTransfer();
   const toast = useToast();
 
+  const { data: recipients = [] } = useRecentRecipients(user!.id);
+
   const [step, setStep] = useState(0);
   const [toWalletId, setToWalletId] = useState('');
   const [toWallet, setToWallet] = useState<WalletResponse | null>(null);
@@ -259,6 +261,41 @@ export default function SendPage() {
                   </div>
                 )}
               </div>
+
+              {/* Recent recipients */}
+              {recipients.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-slate-500 font-medium mb-2">
+                    Recently Sent To
+                  </div>
+                  <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 overflow-hidden">
+                    {recipients.map(r => {
+                      const initials = r.username.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+                      const selected = toWalletId === r.walletId;
+                      return (
+                        <button
+                          key={r.walletId}
+                          type="button"
+                          onClick={() => { setToWalletId(r.walletId); setRecipientError(''); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${selected ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}
+                        >
+                          <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-[11px] font-semibold grid place-items-center shrink-0">
+                            {initials}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-slate-800">{r.username}</div>
+                            <div className="text-[11px] text-slate-500 font-mono truncate">{r.walletId}</div>
+                          </div>
+                          {selected && (
+                            <CheckIcon />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <button
                 disabled={!toWalletId.trim() || recipientLoading}
                 onClick={handleContinueStep0}

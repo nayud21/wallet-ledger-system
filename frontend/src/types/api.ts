@@ -1,3 +1,9 @@
+export interface RecentRecipientResponse {
+  walletId: string;
+  username: string;
+  currency: string;
+}
+
 export interface UserResponse {
   id: string;
   username: string;

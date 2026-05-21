@@ -3,6 +3,7 @@ import {
   fetchWallets,
   fetchWallet,
   fetchWalletEntries,
+  fetchRecentRecipients,
   topUpWallet,
   transferWallet,
   createWallet,
@@ -52,6 +53,17 @@ export function useTransfer() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: TransferRequest) => transferWallet(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['wallets'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wallets'] });
+      qc.invalidateQueries({ queryKey: ['recentRecipients'] });
+    },
+  });
+}
+
+export function useRecentRecipients(userId: string) {
+  return useQuery({
+    queryKey: ['recentRecipients', userId],
+    queryFn: () => fetchRecentRecipients(userId),
+    enabled: !!userId,
   });
 }

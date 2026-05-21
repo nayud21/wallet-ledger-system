@@ -6,6 +6,7 @@ import type {
   TopUpRequest,
   TransferRequest,
   TransferResponse,
+  RecentRecipientResponse,
 } from '../types/api';
 
 export function fetchWallets(userId?: string): Promise<WalletResponse[]> {
@@ -40,4 +41,10 @@ export function transferWallet(req: TransferRequest): Promise<TransferResponse> 
     method: 'POST',
     body: JSON.stringify(req),
   });
+}
+
+export function fetchRecentRecipients(userId: string, limit = 5): Promise<RecentRecipientResponse[]> {
+  return apiFetch<RecentRecipientResponse[]>(
+    `/api/v1/wallets/recent-recipients?userId=${encodeURIComponent(userId)}&limit=${limit}`
+  );
 }

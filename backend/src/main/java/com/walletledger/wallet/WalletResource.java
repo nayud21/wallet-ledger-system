@@ -75,6 +75,14 @@ public class WalletResource {
     }
 
     @GET
+    @Path("/recent-recipients")
+    public List<RecentRecipientResponse> recentRecipients(@QueryParam("userId") UUID userId,
+                                                          @QueryParam("limit") @DefaultValue("5") int limit) {
+        if (userId == null) throw new BadRequestException("userId is required");
+        return walletRepo.findRecentRecipients(userId, Math.min(limit, 10));
+    }
+
+    @GET
     @Path("/{id}/stream")
     @Produces(MediaType.SERVER_SENT_EVENTS)
     @RestStreamElementType(MediaType.APPLICATION_JSON)
