@@ -1,23 +1,35 @@
-import { useState } from 'react';
-import Layout from './components/layout/Layout';
-import WalletsPage from './pages/WalletsPage';
-import LedgerPage from './pages/LedgerPage';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
+import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/consumer/DashboardPage';
+import SendPage from './pages/consumer/SendPage';
+import HistoryPage from './pages/consumer/HistoryPage';
+import AdminApp from './pages/AdminApp';
 
-type Page = 'wallets' | 'ledger' | 'inbox' | 'recon';
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
 
 export default function App() {
-  const [page, setPage] = useState<Page>('wallets');
-
   return (
-    <Layout screen={page} onNavigate={setPage}>
-      {page === 'wallets' && <WalletsPage />}
-      {page === 'ledger' && <LedgerPage />}
-      {page === 'inbox' && (
-        <div className="p-6 text-sm text-slate-500">Inbox — coming soon</div>
-      )}
-      {page === 'recon' && (
-        <div className="p-6 text-sm text-slate-500">Reconciliation — coming soon</div>
-      )}
-    </Layout>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+
+      <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+      <Route path="/send"      element={<ProtectedRoute><SendPage /></ProtectedRoute>} />
+      <Route path="/history"   element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
+
+      <Route path="/admin/*" element={<AdminApp />} />
+
+      <Route path="/" element={<NavigateToDefault />} />
+      <Route path="*" element={<NavigateToDefault />} />
+    </Routes>
   );
+}
+
+function NavigateToDefault() {
+  const { user } = useAuth();
+  return <Navigate to={user ? '/dashboard' : '/login'} replace />;
 }

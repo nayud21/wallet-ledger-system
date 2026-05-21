@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { IconSearch, IconChevron, IconChevronRight, IconCheck } from '../icons';
+import { useAuth } from '../../context/AuthContext';
 
 type Screen = 'wallets' | 'ledger' | 'inbox' | 'recon' | 'wallet-detail';
 
@@ -25,6 +26,7 @@ interface Crumb {
 
 export default function TopBar({ screen, walletId, onBack }: TopBarProps) {
   const [open, setOpen] = useState(false);
+  const { user, logout } = useAuth();
   const current = operators.find((o) => o.active)!;
 
   const crumbs: Crumb[] = [];
@@ -72,9 +74,9 @@ export default function TopBar({ screen, walletId, onBack }: TopBarProps) {
             className="h-7 pl-1 pr-2 rounded border border-slate-200 hover:bg-slate-50 flex items-center gap-2"
           >
             <span className="w-5 h-5 rounded bg-slate-800 text-white text-[10px] font-semibold grid place-items-center font-mono">
-              {current.init}
+              {user ? user.username.slice(0, 2).toUpperCase() : current.init}
             </span>
-            <span className="text-xs font-medium text-slate-700">{current.name.split(' ')[0]}</span>
+            <span className="text-xs font-medium text-slate-700">{user ? user.username : current.name.split(' ')[0]}</span>
             <span className="text-[10px] text-slate-400 px-1 py-0.5 rounded bg-slate-100">{current.role}</span>
             <IconChevron className="w-3 h-3 text-slate-400" />
           </button>
@@ -100,7 +102,7 @@ export default function TopBar({ screen, walletId, onBack }: TopBarProps) {
                 ))}
                 <div className="border-t border-slate-100 mt-1 pt-1">
                   <button className="w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 text-left">Settings</button>
-                  <button className="w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 text-left">Sign out</button>
+                  <button onClick={logout} className="w-full px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 text-left">Sign out</button>
                 </div>
               </div>
             </>

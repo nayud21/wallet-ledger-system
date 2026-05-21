@@ -15,6 +15,7 @@ Notes extracted from building a production-grade Wallet + Double-Entry Ledger sy
 | [07](07_flyway_schema_migrations.md) | **Flyway Migrations** | Versioned SQL, immutability rule, `NUMERIC` vs `FLOAT`, Hibernate `validate` strategy |
 | [08](08_money_in_code.md) | **Money in Code** | `BigDecimal` vs `double`, `NUMERIC(19,4)`, `compareTo()` vs `equals()`, currency pairing |
 | [09](09_webhook_inbox_pattern.md) | **Webhook Inbox Pattern** | Inbox table, async processing, JSONB storage, `@JdbcTypeCode`, Quarkus `@Scheduled` |
+| [10](10_auth_future.md) | **Auth — Future Implementation** | Mock login → JWT/OIDC roadmap, password hashing, token storage, BOLA enforcement, migration checklist |
 
 ## How These Topics Connect
 

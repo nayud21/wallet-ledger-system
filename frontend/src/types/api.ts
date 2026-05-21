@@ -1,3 +1,10 @@
+export interface UserResponse {
+  id: string;
+  username: string;
+  email: string;
+  createdAt: string;
+}
+
 export interface WalletResponse {
   id: string;
   userId: string;
