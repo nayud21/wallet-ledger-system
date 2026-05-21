@@ -79,8 +79,8 @@ public class WalletResource {
     @Produces(MediaType.SERVER_SENT_EVENTS)
     @RestStreamElementType(MediaType.APPLICATION_JSON)
     public Multi<String> stream(@PathParam("id") UUID id) {
-        walletRepo.findByIdOptional(id)
-            .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
+        // No blocking DB call here — returns Multi directly on the IO thread.
+        // Unknown wallet IDs simply never receive events, which is safe.
         return walletEventBus.subscribe(id);
     }
 
