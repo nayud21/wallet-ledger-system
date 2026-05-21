@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useWallets, useTransfer } from '../../hooks/useWallets';
+import { useToast } from '../../context/ToastContext';
 import ConsumerLayout from '../../components/consumer/ConsumerLayout';
 import { fmtMoney } from '../../utils/format';
 import { fetchWallet } from '../../api/wallets';
@@ -33,6 +34,81 @@ const ChevronIcon = () => (
   </svg>
 );
 
+interface SuccessPayload {
+  amountStr: string;
+  currency: string;
+  toWalletId: string;
+  fromLabel: string;
+  fromAvailable: string;
+  idempotencyKey: string;
+  time: string;
+}
+
+function SendSuccessScreen({ payload, onSendAgain, onDashboard }: {
+  payload: SuccessPayload;
+  onSendAgain: () => void;
+  onDashboard: () => void;
+}) {
+  return (
+    <div className="max-w-lg w-full mx-auto fade-up-1">
+      <div className="text-center mb-1">
+        <div className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">Step 3 of 3</div>
+        <div className="text-xl font-semibold tracking-tight mt-1">Success</div>
+      </div>
+      <div className="flex items-center justify-center gap-2 mb-6">
+        {[0, 1, 2].map(i => (
+          <span key={i} className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${i === 2 ? 'bg-emerald-600' : 'bg-indigo-600'}`} />
+            {i < 2 && <span className="h-px w-8 bg-indigo-600" />}
+          </span>
+        ))}
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl p-7">
+        <div className="flex justify-center mb-5">
+          <div className="relative w-16 h-16">
+            <span className="absolute inset-0 rounded-full bg-emerald-500 success-ring" />
+            <div className="success-circle absolute inset-0 rounded-full bg-emerald-600 grid place-items-center">
+              <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path className="success-check" d="M5 12.5l4.5 4.5L19 7.5" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="text-center mb-6 fade-up-1">
+          <div className="text-xl font-semibold tracking-tight text-slate-900">Transfer Sent</div>
+          <div className="text-sm text-slate-500 mt-1.5">Your transfer has been processed successfully.</div>
+        </div>
+
+        <div className="rounded-xl bg-slate-50 border border-slate-200 divide-y divide-slate-200 fade-up-2">
+          {[
+            { label: 'Amount', content: <span className="text-base font-bold num text-emerald-600">{payload.amountStr} <span className="text-xs text-emerald-600/80 font-medium font-mono">{payload.currency}</span></span> },
+            { label: 'To',     content: <span className="font-mono text-sm text-slate-800 truncate block max-w-[220px]">{payload.toWalletId}</span> },
+            { label: 'From',   content: <div className="text-right"><div className="text-sm font-medium text-slate-800">{payload.fromLabel}</div><div className="text-[11px] text-slate-500 num">{payload.fromAvailable} available</div></div> },
+            { label: 'Reference', content: <span className="font-mono text-[12px] text-slate-700">{payload.idempotencyKey.slice(0, 13)}</span> },
+            { label: 'Time',   content: <span className="text-sm text-slate-700 num">{payload.time}</span> },
+          ].map(({ label, content }) => (
+            <div key={label} className="flex items-center justify-between px-4 py-3">
+              <span className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">{label}</span>
+              <div className="text-right min-w-0">{content}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mt-6 fade-up-3">
+          <button onClick={onSendAgain} className="h-11 inline-flex items-center justify-center gap-1.5 rounded-lg text-[15px] font-medium border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors">
+            Send Again
+          </button>
+          <button onClick={onDashboard} className="h-11 inline-flex items-center justify-center gap-1.5 rounded-lg text-[15px] font-medium bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600 transition-colors">
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const STEPS = ['Recipient', 'Amount', 'Confirm'];
 
 function StepDots({ step }: { step: number }) {
@@ -62,6 +138,7 @@ export default function SendPage() {
   const navigate = useNavigate();
   const { data: wallets } = useWallets(user!.id);
   const transfer = useTransfer();
+  const toast = useToast();
 
   const [step, setStep] = useState(0);
   const [toWalletId, setToWalletId] = useState('');
@@ -72,6 +149,7 @@ export default function SendPage() {
   const [amount, setAmount] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [error, setError] = useState('');
+  const [successPayload, setSuccessPayload] = useState<SuccessPayload | null>(null);
 
   const fromWallet: WalletResponse | undefined =
     wallets?.find(w => w.id === fromWalletId) ?? wallets?.[0];
@@ -98,18 +176,48 @@ export default function SendPage() {
   async function handleConfirm() {
     if (!fromWallet) return;
     setError('');
+    const idempotencyKey = crypto.randomUUID();
     try {
       await transfer.mutateAsync({
         fromWalletId: fromWallet.id,
         toWalletId,
         amount: amountNum,
         currency: fromWallet.currency,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey,
       });
-      navigate('/dashboard');
+      setSuccessPayload({
+        amountStr: fmtMoney(amountNum, fromWallet.currency),
+        currency: fromWallet.currency,
+        toWalletId,
+        fromLabel: `${fromWallet.currency} Wallet`,
+        fromAvailable: fmtMoney(fromWallet.availableBalance - amountNum, fromWallet.currency),
+        idempotencyKey,
+        time: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }),
+      });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Transfer failed.');
+      const msg = e instanceof Error ? e.message : 'Transfer failed.';
+      setError(msg);
+      toast.push({ kind: 'error', title: 'Transfer failed', subtitle: msg });
     }
+  }
+
+  if (successPayload) {
+    return (
+      <ConsumerLayout>
+        <SendSuccessScreen
+          payload={successPayload}
+          onSendAgain={() => {
+            setSuccessPayload(null);
+            setStep(0);
+            setToWalletId('');
+            setToWallet(null);
+            setAmount('');
+            setFromWalletId('');
+          }}
+          onDashboard={() => navigate('/dashboard')}
+        />
+      </ConsumerLayout>
+    );
   }
 
   return (

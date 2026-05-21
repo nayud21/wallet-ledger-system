@@ -6,6 +6,7 @@ import com.walletledger.shared.util.RequestHasher;
 import com.walletledger.user.UserRepository;
 import com.walletledger.wallet.dto.*;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.NotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class WalletService {
     private final LedgerTransactionRepository ledgerTxRepo;
     private final LedgerEntryRepository ledgerEntryRepo;
     private final WalletBalanceSnapshotRepository snapshotRepo;
+    private final Event<WalletEvent> walletEvents;
 
     @Transactional
     public WalletResponse createWallet(CreateWalletRequest req) {
@@ -87,6 +89,7 @@ public class WalletService {
         wallet.updatedAt = Instant.now();
 
         persistSnapshot(wallet, tx.id);
+        walletEvents.fire(new WalletEvent(wallet.id, "CREDIT", req.amount(), wallet.currency, "TOP_UP"));
         return WalletResponse.from(wallet);
     }
 
@@ -158,6 +161,9 @@ public class WalletService {
 
         persistSnapshot(from, tx.id);
         persistSnapshot(to, tx.id);
+
+        walletEvents.fire(new WalletEvent(from.id, "DEBIT", req.amount(), currency, "TRANSFER_OUT"));
+        walletEvents.fire(new WalletEvent(to.id, "CREDIT", req.amount(), currency, "TRANSFER_IN"));
 
         return new TransferResponse(WalletResponse.from(from), WalletResponse.from(to));
     }

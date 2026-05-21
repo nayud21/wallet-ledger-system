@@ -3,11 +3,13 @@ package com.walletledger.wallet;
 import com.walletledger.ledger.LedgerEntryRepository;
 import com.walletledger.ledger.dto.LedgerEntryResponse;
 import com.walletledger.wallet.dto.*;
+import io.smallrye.mutiny.Multi;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import lombok.RequiredArgsConstructor;
+import org.jboss.resteasy.reactive.RestStreamElementType;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,6 +22,7 @@ public class WalletResource {
     private final WalletService walletService;
     private final WalletRepository walletRepo;
     private final LedgerEntryRepository ledgerEntryRepo;
+    private final WalletEventBus walletEventBus;
 
     @GET
     public List<WalletResponse> list(@QueryParam("userId") UUID userId) {
@@ -69,6 +72,16 @@ public class WalletResource {
         }
         return ledgerEntryRepo.findByLedgerAccountId(wallet.ledgerAccountId)
             .stream().map(LedgerEntryResponse::from).toList();
+    }
+
+    @GET
+    @Path("/{id}/stream")
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    @RestStreamElementType(MediaType.APPLICATION_JSON)
+    public Multi<String> stream(@PathParam("id") UUID id) {
+        walletRepo.findByIdOptional(id)
+            .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
+        return walletEventBus.subscribe(id);
     }
 
     private void assertOwner(UUID walletId, UUID callerId) {

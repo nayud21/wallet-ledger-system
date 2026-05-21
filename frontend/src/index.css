@@ -36,6 +36,54 @@ body {
 }
 .drawer-enter { animation: slideInRight 240ms cubic-bezier(.2,.7,.2,1) both; }
 
+/* Toast animations */
+@keyframes toast-in {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+@keyframes toast-out {
+  from { transform: translateY(0); opacity: 1; }
+  to   { transform: translateY(-100%); opacity: 0; }
+}
+.toast-enter { animation: toast-in 200ms ease-out both; }
+.toast-exit  { animation: toast-out 150ms ease-in both; }
+
+@keyframes progress {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+.progress-fill {
+  transform-origin: left center;
+  animation: progress var(--toast-dur, 4000ms) linear forwards;
+}
+.progress-paused .progress-fill { animation-play-state: paused; }
+
+/* Success screen animations */
+@keyframes circle-pop {
+  0%   { transform: scale(0); opacity: 0; }
+  60%  { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes ring-ping {
+  0%   { transform: scale(0.8); opacity: 0.55; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+@keyframes check-draw {
+  0%   { stroke-dashoffset: 36; }
+  100% { stroke-dashoffset: 0; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.success-circle { animation: circle-pop 360ms cubic-bezier(.2,.9,.3,1.2) both; }
+.success-ring   { animation: ring-ping 900ms cubic-bezier(.2,.7,.2,1) 120ms both; }
+.success-check  { stroke-dasharray: 36; stroke-dashoffset: 36; animation: check-draw 360ms ease-out 240ms forwards; }
+.fade-up-1 { animation: fade-up 320ms ease-out 200ms both; }
+.fade-up-2 { animation: fade-up 320ms ease-out 280ms both; }
+.fade-up-3 { animation: fade-up 320ms ease-out 360ms both; }
+.fade-up-4 { animation: fade-up 320ms ease-out 440ms both; }
+
 .select-caret {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%2364748b' stroke-width='1.5'%3E%3Cpath d='M3 4.5l3 3 3-3'/%3E%3C/svg%3E");
   background-repeat: no-repeat;

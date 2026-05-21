@@ -1,6 +1,8 @@
 import { ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useWallets } from '../../hooks/useWallets';
+import { useWalletStream } from '../../hooks/useWalletStream';
 
 const WalletLogo = () => (
   <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6">
@@ -22,6 +24,13 @@ interface ConsumerLayoutProps {
   children: ReactNode;
 }
 
+function WalletStreamListener() {
+  const { user } = useAuth();
+  const { data: wallets } = useWallets(user!.id);
+  useWalletStream(wallets?.map(w => w.id) ?? []);
+  return null;
+}
+
 export default function ConsumerLayout({ children }: ConsumerLayoutProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -32,6 +41,8 @@ export default function ConsumerLayout({ children }: ConsumerLayoutProps) {
   }
 
   return (
+    <>
+    <WalletStreamListener />
     <div className="min-h-screen bg-slate-50">
       {/* AppBar */}
       <div className="bg-white border-b border-slate-200">
@@ -83,5 +94,6 @@ export default function ConsumerLayout({ children }: ConsumerLayoutProps) {
         {children}
       </div>
     </div>
+    </>
   );
 }
