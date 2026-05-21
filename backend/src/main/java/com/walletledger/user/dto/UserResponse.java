@@ -1,0 +1,12 @@
+package com.walletledger.user.dto;
+
+import com.walletledger.user.User;
+import java.time.Instant;
+import java.util.UUID;
+
+public record UserResponse(UUID id, String username, String email, Instant createdAt) {
+
+    public static UserResponse from(User u) {
+        return new UserResponse(u.id, u.username, u.email, u.createdAt);
+    }
+}
