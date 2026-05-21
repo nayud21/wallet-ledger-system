@@ -17,6 +17,7 @@ PostgreSQL runs via `docker-compose up -d` from the repo root.
 3. If a change requires schema migration, add a new `V{n}__{name}.sql`. Never edit a committed migration.
 
 ### Backend — non-negotiable rules
+- **Dependency injection:** use `@RequiredArgsConstructor` (Lombok) with `private final` fields. Never `@Inject` on fields directly.
 - **Money:** `java.math.BigDecimal` in code, `NUMERIC(19,4)` in DB. Never `double`. Always pair amounts with a `currency`.
 - **Double-entry:** every `ledger_transaction` must have entries summing to zero per currency. Enforce at service layer (assert before commit) and DB (CHECK in a later migration).
 - **Append-only:** `ledger_entries` rows are never UPDATEd or DELETEd. Reversals create a new transaction with mirrored entries.
