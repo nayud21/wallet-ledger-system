@@ -1,5 +1,6 @@
 package com.walletledger.ledger;
 
+import com.walletledger.audit.AuditLogService;
 import com.walletledger.ledger.dto.LedgerTransactionResponse;
 import com.walletledger.ledger.dto.ReversalRequest;
 import com.walletledger.shared.exception.AlreadyReversedException;
@@ -25,6 +26,7 @@ public class LedgerService {
     private final LedgerAccountRepository ledgerAccountRepo;
     private final WalletRepository walletRepo;
     private final WalletBalanceSnapshotRepository snapshotRepo;
+    private final AuditLogService auditLogService;
 
     @Transactional
     public LedgerTransactionResponse reverse(ReversalRequest req) {
@@ -82,6 +84,9 @@ public class LedgerService {
                 snapshotRepo.persist(snap);
             });
         }
+
+        auditLogService.log("ledger_transaction", String.valueOf(original.id), "REVERSAL",
+            "{\"reversalTxId\":" + reversal.id + ",\"reason\":\"" + req.reason() + "\"}");
 
         return LedgerTransactionResponse.from(reversal);
     }

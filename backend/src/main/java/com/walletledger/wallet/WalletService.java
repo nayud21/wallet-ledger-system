@@ -1,5 +1,6 @@
 package com.walletledger.wallet;
 
+import com.walletledger.audit.AuditLogService;
 import com.walletledger.ledger.*;
 import com.walletledger.payment.PaymentEventRepository;
 import com.walletledger.shared.exception.*;
@@ -27,6 +28,7 @@ public class WalletService {
     private final WalletBalanceSnapshotRepository snapshotRepo;
     private final PaymentEventRepository paymentEventRepo;
     private final Event<WalletEvent> walletEvents;
+    private final AuditLogService auditLogService;
 
     @Transactional
     public WalletResponse createWallet(CreateWalletRequest req) {
@@ -45,6 +47,9 @@ public class WalletService {
         wallet.externalId = req.externalId();
         wallet.ledgerAccountId = account.id;
         walletRepo.persist(wallet);
+
+        auditLogService.log("wallet", wallet.id.toString(), "CREATE",
+            "{\"userId\":\"" + wallet.userId + "\",\"currency\":\"" + wallet.currency + "\"}");
 
         return WalletResponse.from(wallet);
     }
@@ -93,6 +98,9 @@ public class WalletService {
 
         persistSnapshot(wallet, tx.id);
         walletEvents.fire(new WalletEvent(wallet.id, "CREDIT", req.amount(), wallet.currency, "TOP_UP"));
+        auditLogService.log("wallet", wallet.id.toString(), "TOP_UP",
+            "{\"amount\":\"" + req.amount().toPlainString() + "\",\"currency\":\"" + wallet.currency
+            + "\",\"ledgerTxId\":" + tx.id + "}");
         return WalletResponse.from(wallet);
     }
 
@@ -167,6 +175,12 @@ public class WalletService {
 
         walletEvents.fire(new WalletEvent(from.id, "DEBIT", req.amount(), currency, "TRANSFER_OUT"));
         walletEvents.fire(new WalletEvent(to.id, "CREDIT", req.amount(), currency, "TRANSFER_IN"));
+        auditLogService.log("wallet", from.id.toString(), "TRANSFER_OUT",
+            "{\"toWalletId\":\"" + to.id + "\",\"amount\":\"" + req.amount().toPlainString()
+            + "\",\"currency\":\"" + currency + "\",\"ledgerTxId\":" + tx.id + "}");
+        auditLogService.log("wallet", to.id.toString(), "TRANSFER_IN",
+            "{\"fromWalletId\":\"" + from.id + "\",\"amount\":\"" + req.amount().toPlainString()
+            + "\",\"currency\":\"" + currency + "\",\"ledgerTxId\":" + tx.id + "}");
 
         return new TransferResponse(WalletResponse.from(from), WalletResponse.from(to));
     }
@@ -187,8 +201,11 @@ public class WalletService {
     public WalletResponse freeze(UUID id) {
         Wallet wallet = walletRepo.findByIdOptional(id)
             .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
+        String previous = wallet.status;
         wallet.status = "FROZEN";
         wallet.updatedAt = Instant.now();
+        auditLogService.log("wallet", id.toString(), "FREEZE",
+            "{\"previousStatus\":\"" + previous + "\",\"newStatus\":\"FROZEN\"}");
         return WalletResponse.from(wallet);
     }
 
@@ -196,8 +213,11 @@ public class WalletService {
     public WalletResponse unfreeze(UUID id) {
         Wallet wallet = walletRepo.findByIdOptional(id)
             .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
+        String previous = wallet.status;
         wallet.status = "ACTIVE";
         wallet.updatedAt = Instant.now();
+        auditLogService.log("wallet", id.toString(), "UNFREEZE",
+            "{\"previousStatus\":\"" + previous + "\",\"newStatus\":\"ACTIVE\"}");
         return WalletResponse.from(wallet);
     }
 

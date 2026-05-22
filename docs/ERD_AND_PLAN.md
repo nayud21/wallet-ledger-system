@@ -184,6 +184,13 @@ erDiagram
    - Persist the raw payload to `payment_events` (JSONB) and return `200 OK` immediately.
    - A `@Scheduled` worker processes pending events with idempotent semantics, advancing them through `PENDING → PROCESSED | FAILED`.
 
+2. **Audit logging — `AuditLogService`**
+   - Write one row to `audit_logs` for every state-changing action on sensitive entities.
+   - Covered actions: `wallet.CREATE`, `wallet.TOP_UP`, `wallet.TRANSFER_OUT`, `wallet.TRANSFER_IN`, `wallet.FREEZE`, `wallet.UNFREEZE`, `ledger_transaction.REVERSAL`.
+   - `diff` column stores a JSON snapshot of the key fields that changed (before/after for status changes; amount + ledgerTxId for financial actions).
+   - `performed_by` defaults to `"system"`; future JWT auth phase will populate it from the request principal.
+   - AC: after each covered action, exactly one new row exists in `audit_logs` with the correct `entity`, `entity_id`, and `action`.
+
 ### Phase C — Reconciliation engine & jobs
 
 1. **`ReconciliationRunner` (scheduled)**
