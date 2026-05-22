@@ -19,6 +19,7 @@ Notes extracted from building a production-grade Wallet + Double-Entry Ledger sy
 | [11](11_server_sent_events.md) | **Server-Sent Events (SSE)** | Quarkus Reactive `Multi<String>`, CDI `AFTER_SUCCESS` observer, IO thread constraint, `CopyOnWriteArrayList` |
 | [12](12_tanstack_query_patterns.md) | **TanStack Query Patterns** | queryKey design, invalidation, `enabled` flag, stale-while-revalidate, anti-pattern `useEffect+fetch` |
 | [13](13_ddd_aggregate_boundaries.md) | **DDD Aggregate Boundaries** | Plain ID vs `@ManyToOne`, cross-aggregate queries, N+1 prevention, native SQL trade-off |
+| [14](14_remaining_technical_gaps.md) | **Remaining Technical Gaps** | Sum-zero CHECK, reserved-balance flow, outbox, hash-chained audit, observability, multi-currency, CoA, saga, CQRS, event sourcing, sharding |
 
 ## How These Topics Connect
 
