@@ -1,7 +1,6 @@
-package com.walletledger.wallet;
+package com.walletledger.wallet.event;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.walletledger.wallet.dto.WalletEvent;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;

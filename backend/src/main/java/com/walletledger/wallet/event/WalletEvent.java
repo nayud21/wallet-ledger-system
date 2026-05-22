@@ -1,4 +1,4 @@
-package com.walletledger.wallet.dto;
+package com.walletledger.wallet.event;
 
 import java.math.BigDecimal;
 import java.util.UUID;

@@ -3,6 +3,7 @@ package com.walletledger.wallet;
 import com.walletledger.ledger.LedgerEntryRepository;
 import com.walletledger.ledger.dto.LedgerEntryResponse;
 import com.walletledger.wallet.dto.*;
+import com.walletledger.wallet.event.WalletEventBus;
 import io.smallrye.mutiny.Multi;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;

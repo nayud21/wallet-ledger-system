@@ -7,6 +7,7 @@ import com.walletledger.shared.exception.*;
 import com.walletledger.shared.util.RequestHasher;
 import com.walletledger.user.UserRepository;
 import com.walletledger.wallet.dto.*;
+import com.walletledger.wallet.event.WalletEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
