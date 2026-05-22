@@ -121,6 +121,13 @@ erDiagram
         timestamp created_at
     }
 
+    IDEMPOTENCY_KEYS {
+        varchar key PK
+        varchar request_hash
+        timestamp expires_at
+        timestamp created_at
+    }
+
     USERS ||--o{ WALLETS : "owns"
     WALLETS ||--o{ WALLET_BALANCE_SNAPSHOTS : "snapshots"
     LEDGER_TRANSACTIONS ||--o{ LEDGER_ENTRIES : "contains"
@@ -144,7 +151,7 @@ erDiagram
 ## Core Concepts
 
 1. **Double-Entry Bookkeeping.** Every transaction has ≥ 2 entries that sum to zero per currency. Money never appears or disappears — it moves between accounts (e.g. from a settlement asset account to a wallet liability account).
-2. **Idempotency.** Prevents duplicated debits/credits from retried webhooks or flaky networks. Implemented via a UNIQUE `idempotency_key` column.
+2. **Idempotency.** Prevents duplicated debits/credits from retried webhooks or flaky networks. Tracked in a dedicated `idempotency_keys` table (TTL 24h, prunable) rather than in `ledger_transactions`. This separates short-lived dedup bookkeeping from permanent financial records and keeps the dedup index small as volume grows. `ledger_transactions.idempotency_key` is retained as a non-unique trace reference only.
 3. **Concurrency Control.** Pessimistic row locks (`SELECT ... FOR UPDATE`) on wallets prevent race conditions on balance updates.
 4. **Reconciliation.** A scheduled job compares ledger entries against external bank statements and surfaces unmatched items as exceptions.
 

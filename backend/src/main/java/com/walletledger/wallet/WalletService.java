@@ -1,6 +1,7 @@
 package com.walletledger.wallet;
 
 import com.walletledger.audit.AuditLogService;
+import com.walletledger.idempotency.IdempotencyKeyRepository;
 import com.walletledger.ledger.*;
 import com.walletledger.payment.PaymentEventRepository;
 import com.walletledger.shared.exception.*;
@@ -28,6 +29,7 @@ public class WalletService {
     private final LedgerEntryRepository ledgerEntryRepo;
     private final WalletBalanceSnapshotRepository snapshotRepo;
     private final PaymentEventRepository paymentEventRepo;
+    private final IdempotencyKeyRepository idempotencyKeyRepo;
     private final Event<WalletEvent> walletEvents;
     private final AuditLogService auditLogService;
 
@@ -58,16 +60,15 @@ public class WalletService {
     @Transactional
     public WalletResponse topUp(TopUpRequest req) {
         String hash = RequestHasher.hash(req.walletId().toString(), req.amount().toPlainString(), req.currency().toUpperCase());
-        ledgerTxRepo.findByIdempotencyKey(req.idempotencyKey()).ifPresent(existing -> {
-            if (existing.requestHash != null && !existing.requestHash.equals(hash)) {
-                throw new IdempotencyConflictException(req.idempotencyKey());
-            }
-        });
-        if (ledgerTxRepo.findByIdempotencyKey(req.idempotencyKey()).isPresent()) {
+
+        // idempotency_keys is the single source of truth for dedup. checkAndGuard returns true
+        // if the key already exists with a matching hash (safe replay); throws 409 on hash mismatch.
+        if (idempotencyKeyRepo.checkAndGuard(req.idempotencyKey(), hash)) {
             Wallet wallet = walletRepo.findByIdOptional(req.walletId())
                 .orElseThrow(() -> new NotFoundException("Wallet not found: " + req.walletId()));
             return WalletResponse.from(wallet);
         }
+        idempotencyKeyRepo.persist(req.idempotencyKey(), hash);
 
         Wallet wallet = walletRepo.findByIdForUpdate(req.walletId())
             .orElseThrow(() -> new NotFoundException("Wallet not found: " + req.walletId()));
@@ -87,7 +88,6 @@ public class WalletService {
         LedgerTransaction tx = new LedgerTransaction();
         tx.idempotencyKey = req.idempotencyKey();
         tx.description = "TOP_UP:" + wallet.id;
-        tx.requestHash = hash;
         ledgerTxRepo.persist(tx);
 
         // Double-entry: asset side (DEBIT settlement = money enters system), liability side (CREDIT wallet)
@@ -113,19 +113,15 @@ public class WalletService {
 
         String hash = RequestHasher.hash(req.fromWalletId().toString(), req.toWalletId().toString(),
             req.amount().toPlainString(), req.currency().toUpperCase());
-        ledgerTxRepo.findByIdempotencyKey(req.idempotencyKey()).ifPresent(existing -> {
-            if (existing.requestHash != null && !existing.requestHash.equals(hash)) {
-                throw new IdempotencyConflictException(req.idempotencyKey());
-            }
-        });
 
-        if (ledgerTxRepo.findByIdempotencyKey(req.idempotencyKey()).isPresent()) {
+        if (idempotencyKeyRepo.checkAndGuard(req.idempotencyKey(), hash)) {
             Wallet from = walletRepo.findByIdOptional(req.fromWalletId())
                 .orElseThrow(() -> new NotFoundException("Source wallet not found"));
             Wallet to = walletRepo.findByIdOptional(req.toWalletId())
                 .orElseThrow(() -> new NotFoundException("Target wallet not found"));
             return new TransferResponse(WalletResponse.from(from), WalletResponse.from(to));
         }
+        idempotencyKeyRepo.persist(req.idempotencyKey(), hash);
 
         // Lock in ascending UUID order to prevent deadlock
         UUID firstId = req.fromWalletId().compareTo(req.toWalletId()) <= 0
@@ -158,7 +154,6 @@ public class WalletService {
         LedgerTransaction tx = new LedgerTransaction();
         tx.idempotencyKey = req.idempotencyKey();
         tx.description = "TRANSFER:" + from.id + "->" + to.id;
-        tx.requestHash = hash;
         ledgerTxRepo.persist(tx);
 
         // DEBIT source liability (we owe source wallet less), CREDIT target liability (we owe target wallet more)

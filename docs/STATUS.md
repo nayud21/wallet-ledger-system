@@ -200,3 +200,5 @@ UI có tabs All / Active / Frozen nhưng chưa wired — cần thêm `?status=` 
 | Không có rate limiting | Trung bình | Cần thêm khi ra production |
 | `users` table tồn tại nhưng không có màn hình quản lý | Thấp | Tạo user phải qua API trực tiếp |
 | KpiStrip dùng hardcoded placeholder data | Thấp | Chờ `GET /api/v1/wallets/stats` |
+| Lock ordering chỉ handle đúng 2 wallets | **Trung bình** | `transfer()` sort 2 UUID để tránh deadlock, nhưng nếu có operation lock N wallets (split payment, multi-source, fee collection, batch settlement) thì cần sort toàn bộ danh sách IDs rồi lock lần lượt. Pattern hiện tại không sai, chỉ cần mở rộng khi implement các operation đó. |
+| Không có assertion sum-to-zero cho double-entry | **Cao** | Service layer tự tạo entries đúng, nhưng không có guard nào verify tổng DEBIT - CREDIT = 0 trước khi commit. Cần: (1) `postTransaction()` helper assert net=0 per currency trước khi persist, (2) DB-level `DEFERRABLE INITIALLY DEFERRED` trigger trên `ledger_entries` làm safety net. Nếu có bug tạo sai số entries, hiện tại DB không bắt được. |

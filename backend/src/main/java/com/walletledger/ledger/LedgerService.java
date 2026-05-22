@@ -1,10 +1,10 @@
 package com.walletledger.ledger;
 
 import com.walletledger.audit.AuditLogService;
+import com.walletledger.idempotency.IdempotencyKeyRepository;
 import com.walletledger.ledger.dto.LedgerTransactionResponse;
 import com.walletledger.ledger.dto.ReversalRequest;
 import com.walletledger.shared.exception.AlreadyReversedException;
-import com.walletledger.shared.exception.IdempotencyConflictException;
 import com.walletledger.shared.util.RequestHasher;
 import com.walletledger.wallet.Wallet;
 import com.walletledger.wallet.WalletBalanceSnapshot;
@@ -26,18 +26,21 @@ public class LedgerService {
     private final LedgerAccountRepository ledgerAccountRepo;
     private final WalletRepository walletRepo;
     private final WalletBalanceSnapshotRepository snapshotRepo;
+    private final IdempotencyKeyRepository idempotencyKeyRepo;
     private final AuditLogService auditLogService;
 
     @Transactional
     public LedgerTransactionResponse reverse(ReversalRequest req) {
         String hash = RequestHasher.hash(String.valueOf(req.ledgerTransactionId()), req.reason());
-        LedgerTransaction existing = ledgerTxRepo.findByIdempotencyKey(req.idempotencyKey()).orElse(null);
-        if (existing != null) {
-            if (existing.requestHash != null && !existing.requestHash.equals(hash)) {
-                throw new IdempotencyConflictException(req.idempotencyKey());
-            }
-            return LedgerTransactionResponse.from(existing);
+
+        if (idempotencyKeyRepo.checkAndGuard(req.idempotencyKey(), hash)) {
+            // Safe replay: find the reversal transaction created on the first call via its trace key.
+            return ledgerTxRepo.find("idempotencyKey", req.idempotencyKey())
+                .firstResultOptional()
+                .map(LedgerTransactionResponse::from)
+                .orElseThrow(() -> new IllegalStateException("Idempotency key exists but ledger tx missing"));
         }
+        idempotencyKeyRepo.persist(req.idempotencyKey(), hash);
 
         LedgerTransaction original = ledgerTxRepo.findByIdOptional(req.ledgerTransactionId())
             .orElseThrow(() -> new NotFoundException("Transaction not found: " + req.ledgerTransactionId()));
@@ -51,7 +54,6 @@ public class LedgerService {
         LedgerTransaction reversal = new LedgerTransaction();
         reversal.idempotencyKey = req.idempotencyKey();
         reversal.description = "REVERSAL:" + original.id + ":" + req.reason();
-        reversal.requestHash = hash;
         ledgerTxRepo.persist(reversal);
 
         for (LedgerEntry orig : originalEntries) {
