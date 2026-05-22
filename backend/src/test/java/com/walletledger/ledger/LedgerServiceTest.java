@@ -1,5 +1,6 @@
 package com.walletledger.ledger;
 
+import com.walletledger.idempotency.IdempotencyKeyRepository;
 import com.walletledger.ledger.dto.ReversalRequest;
 import com.walletledger.shared.exception.AlreadyReversedException;
 import com.walletledger.shared.exception.IdempotencyConflictException;
@@ -33,6 +34,7 @@ class LedgerServiceTest {
     @InjectMock LedgerAccountRepository ledgerAccountRepo;
     @InjectMock WalletRepository walletRepo;
     @InjectMock WalletBalanceSnapshotRepository snapshotRepo;
+    @InjectMock IdempotencyKeyRepository idempotencyKeyRepo;
 
     private LedgerTransaction originalTx;
 
@@ -43,7 +45,8 @@ class LedgerServiceTest {
         originalTx.idempotencyKey = "ik-original";
         originalTx.description = "TOP_UP:" + UUID.randomUUID();
 
-        when(ledgerTxRepo.findByIdempotencyKey(any())).thenReturn(Optional.empty());
+        when(idempotencyKeyRepo.checkAndGuard(any(), any())).thenReturn(false);
+        doNothing().when(idempotencyKeyRepo).persist(any(String.class), any(String.class));
         when(ledgerTxRepo.findByIdOptional(1L)).thenReturn(Optional.of(originalTx));
         when(ledgerEntryRepo.findByTxId(1L)).thenReturn(List.of());
         doNothing().when(ledgerTxRepo).persist(any(LedgerTransaction.class));
@@ -69,10 +72,8 @@ class LedgerServiceTest {
 
     @Test
     void reverse_idempotencyConflict_throws409() {
-        LedgerTransaction existing = new LedgerTransaction();
-        existing.idempotencyKey = "ik-conflict";
-        existing.requestHash = "wrong-hash";
-        when(ledgerTxRepo.findByIdempotencyKey("ik-conflict")).thenReturn(Optional.of(existing));
+        when(idempotencyKeyRepo.checkAndGuard(eq("ik-conflict"), any()))
+            .thenThrow(new IdempotencyConflictException("ik-conflict"));
 
         ReversalRequest req = new ReversalRequest(1L, "reason", "ik-conflict");
 

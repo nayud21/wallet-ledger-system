@@ -1,5 +1,6 @@
 package com.walletledger.wallet;
 
+import com.walletledger.idempotency.IdempotencyKeyRepository;
 import com.walletledger.ledger.*;
 import com.walletledger.shared.exception.*;
 import com.walletledger.user.UserRepository;
@@ -29,6 +30,7 @@ class WalletServiceTest {
     @InjectMock LedgerEntryRepository ledgerEntryRepo;
     @InjectMock WalletBalanceSnapshotRepository snapshotRepo;
     @InjectMock UserRepository userRepo;
+    @InjectMock IdempotencyKeyRepository idempotencyKeyRepo;
 
     private UUID walletId;
     private Wallet activeWallet;
@@ -58,7 +60,8 @@ class WalletServiceTest {
         settlement.name = "SETTLEMENT_ASSET";
         settlement.type = "ASSET";
 
-        when(ledgerTxRepo.findByIdempotencyKey(any())).thenReturn(Optional.empty());
+        when(idempotencyKeyRepo.checkAndGuard(any(), any())).thenReturn(false);
+        doNothing().when(idempotencyKeyRepo).persist(any(String.class), any(String.class));
         when(walletRepo.findByIdForUpdate(walletId)).thenReturn(Optional.of(activeWallet));
         when(walletRepo.findByIdOptional(walletId)).thenReturn(Optional.of(activeWallet));
         when(ledgerAccountRepo.findByName("SETTLEMENT_ASSET")).thenReturn(Optional.of(settlement));
@@ -97,7 +100,6 @@ class WalletServiceTest {
         LedgerAccount toAccount = new LedgerAccount();
         toAccount.id = 3L;
 
-        // Ensure ascending UUID order lock
         UUID firstId = walletId.compareTo(toId) <= 0 ? walletId : toId;
         UUID secondId = walletId.compareTo(toId) <= 0 ? toId : walletId;
         when(walletRepo.findByIdForUpdate(firstId)).thenReturn(
@@ -120,10 +122,8 @@ class WalletServiceTest {
 
     @Test
     void topUp_idempotencyConflict_throws409() {
-        LedgerTransaction existing = new LedgerTransaction();
-        existing.idempotencyKey = "ik-conflict";
-        existing.requestHash = "different-hash";
-        when(ledgerTxRepo.findByIdempotencyKey("ik-conflict")).thenReturn(Optional.of(existing));
+        when(idempotencyKeyRepo.checkAndGuard(eq("ik-conflict"), any()))
+            .thenThrow(new IdempotencyConflictException("ik-conflict"));
 
         TopUpRequest req = new TopUpRequest(walletId, new BigDecimal("50.00"), "USD", "ik-conflict", null);
 

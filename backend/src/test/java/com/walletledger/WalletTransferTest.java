@@ -33,6 +33,7 @@ class WalletTransferTest {
         em.createNativeQuery("DELETE FROM wallet_balance_snapshots").executeUpdate();
         em.createNativeQuery("DELETE FROM ledger_entries").executeUpdate();
         em.createNativeQuery("DELETE FROM ledger_transactions").executeUpdate();
+        em.createNativeQuery("DELETE FROM idempotency_keys WHERE key LIKE 'ik-%'").executeUpdate();
         em.createNativeQuery("DELETE FROM wallets WHERE external_id LIKE 'test-xfer-%'").executeUpdate();
         em.createNativeQuery("DELETE FROM users WHERE email = 'test-xfer@example.com'").executeUpdate();
         em.createNativeQuery("DELETE FROM ledger_accounts WHERE name IN ('WALLET_LIABILITY:xfer-a','WALLET_LIABILITY:xfer-b')").executeUpdate();

@@ -28,6 +28,7 @@ class LedgerReversalTest {
         em.createNativeQuery("DELETE FROM wallet_balance_snapshots").executeUpdate();
         em.createNativeQuery("DELETE FROM ledger_entries").executeUpdate();
         em.createNativeQuery("DELETE FROM ledger_transactions").executeUpdate();
+        em.createNativeQuery("DELETE FROM idempotency_keys WHERE key LIKE 'ik-%'").executeUpdate();
         em.createNativeQuery("DELETE FROM wallets WHERE external_id LIKE 'test-rev-%'").executeUpdate();
         em.createNativeQuery("DELETE FROM users WHERE email = 'test-rev@example.com'").executeUpdate();
         em.createNativeQuery("DELETE FROM ledger_accounts WHERE name = 'WALLET_LIABILITY:rev'").executeUpdate();

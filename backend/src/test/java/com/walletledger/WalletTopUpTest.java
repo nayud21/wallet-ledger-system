@@ -33,6 +33,7 @@ class WalletTopUpTest {
         em.createNativeQuery("DELETE FROM wallet_balance_snapshots").executeUpdate();
         em.createNativeQuery("DELETE FROM ledger_entries").executeUpdate();
         em.createNativeQuery("DELETE FROM ledger_transactions").executeUpdate();
+        em.createNativeQuery("DELETE FROM idempotency_keys WHERE key LIKE 'ik-%'").executeUpdate();
         em.createNativeQuery("DELETE FROM wallets WHERE external_id LIKE 'test-%'").executeUpdate();
         em.createNativeQuery("DELETE FROM users WHERE email LIKE 'test-%@example.com'").executeUpdate();
         em.createNativeQuery("DELETE FROM ledger_accounts WHERE name = 'WALLET_LIABILITY:test-topup'").executeUpdate();
