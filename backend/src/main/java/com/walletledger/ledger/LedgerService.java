@@ -40,8 +40,6 @@ public class LedgerService {
                 .map(LedgerTransactionResponse::from)
                 .orElseThrow(() -> new IllegalStateException("Idempotency key exists but ledger tx missing"));
         }
-        idempotencyKeyRepo.persist(req.idempotencyKey(), hash);
-
         LedgerTransaction original = ledgerTxRepo.findByIdOptional(req.ledgerTransactionId())
             .orElseThrow(() -> new NotFoundException("Transaction not found: " + req.ledgerTransactionId()));
 
@@ -55,6 +53,7 @@ public class LedgerService {
         reversal.idempotencyKey = req.idempotencyKey();
         reversal.description = "REVERSAL:" + original.id + ":" + req.reason();
         ledgerTxRepo.persist(reversal);
+        idempotencyKeyRepo.persist(req.idempotencyKey(), hash, "ledger_transaction", String.valueOf(reversal.id));
 
         for (LedgerEntry orig : originalEntries) {
             LedgerEntry mirror = new LedgerEntry();

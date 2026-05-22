@@ -68,8 +68,6 @@ public class WalletService {
                 .orElseThrow(() -> new NotFoundException("Wallet not found: " + req.walletId()));
             return WalletResponse.from(wallet);
         }
-        idempotencyKeyRepo.persist(req.idempotencyKey(), hash);
-
         Wallet wallet = walletRepo.findByIdForUpdate(req.walletId())
             .orElseThrow(() -> new NotFoundException("Wallet not found: " + req.walletId()));
 
@@ -89,6 +87,7 @@ public class WalletService {
         tx.idempotencyKey = req.idempotencyKey();
         tx.description = "TOP_UP:" + wallet.id;
         ledgerTxRepo.persist(tx);
+        idempotencyKeyRepo.persist(req.idempotencyKey(), hash, "ledger_transaction", String.valueOf(tx.id));
 
         // Double-entry: asset side (DEBIT settlement = money enters system), liability side (CREDIT wallet)
         persistEntry(settlement.id, tx.id, "DEBIT", req.amount(), wallet.currency, req.externalRef());
@@ -121,8 +120,6 @@ public class WalletService {
                 .orElseThrow(() -> new NotFoundException("Target wallet not found"));
             return new TransferResponse(WalletResponse.from(from), WalletResponse.from(to));
         }
-        idempotencyKeyRepo.persist(req.idempotencyKey(), hash);
-
         // Lock in ascending UUID order to prevent deadlock
         UUID firstId = req.fromWalletId().compareTo(req.toWalletId()) <= 0
             ? req.fromWalletId() : req.toWalletId();
@@ -155,6 +152,7 @@ public class WalletService {
         tx.idempotencyKey = req.idempotencyKey();
         tx.description = "TRANSFER:" + from.id + "->" + to.id;
         ledgerTxRepo.persist(tx);
+        idempotencyKeyRepo.persist(req.idempotencyKey(), hash, "ledger_transaction", String.valueOf(tx.id));
 
         // DEBIT source liability (we owe source wallet less), CREDIT target liability (we owe target wallet more)
         persistEntry(fromAccount.id, tx.id, "DEBIT", req.amount(), currency, null);

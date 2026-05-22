@@ -31,10 +31,16 @@ public class IdempotencyKeyRepository implements PanacheRepositoryBase<Idempoten
     }
 
     public void persist(String key, String requestHash) {
+        persist(key, requestHash, null, null);
+    }
+
+    public void persist(String key, String requestHash, String entityType, String entityId) {
         IdempotencyKey record = new IdempotencyKey();
         record.key = key;
         record.requestHash = requestHash;
         record.expiresAt = Instant.now().plus(TTL);
+        record.entityType = entityType;
+        record.entityId = entityId;
         persist(record);
     }
 }
