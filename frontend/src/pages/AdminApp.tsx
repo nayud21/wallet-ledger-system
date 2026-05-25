@@ -3,6 +3,7 @@ import Layout from '../components/layout/Layout';
 import WalletsPage from './WalletsPage';
 import LedgerPage from './LedgerPage';
 import InboxPage from './InboxPage';
+import ReconciliationPage from './ReconciliationPage';
 
 type AdminScreen = 'wallets' | 'ledger' | 'inbox' | 'recon';
 
@@ -14,7 +15,7 @@ export default function AdminApp() {
       {screen === 'wallets' && <WalletsPage />}
       {screen === 'ledger' && <LedgerPage />}
       {screen === 'inbox' && <InboxPage />}
-      {screen === 'recon' && <div className="p-6 text-sm text-slate-500">Reconciliation — coming soon</div>}
+      {screen === 'recon' && <ReconciliationPage />}
     </Layout>
   );
 }
