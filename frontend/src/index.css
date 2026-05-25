@@ -25,6 +25,25 @@ body {
 
 .row-hover:hover { background: #f8fafc; }
 
+/* Consumer V2 — dark hero card */
+.hero-bg {
+  background-color: #020617;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px),
+    radial-gradient(600px 280px at 100% 0%, rgba(99,102,241,0.22) 0%, transparent 60%),
+    radial-gradient(420px 240px at 0% 100%, rgba(16,185,129,0.10) 0%, transparent 60%),
+    linear-gradient(180deg, #0f172a 0%, #020617 100%);
+  background-size: 32px 32px, 32px 32px, auto, auto, auto;
+  background-position: -1px -1px, -1px -1px, 0 0, 0 0, 0 0;
+}
+.hero-shadow {
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.04) inset,
+    0 20px 40px -20px rgba(2,6,23,0.5),
+    0 8px 24px -12px rgba(2,6,23,0.35);
+}
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 6px; }

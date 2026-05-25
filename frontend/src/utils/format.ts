@@ -1,8 +1,19 @@
-export function fmtMoney(amount: number, currency = 'USD'): string {
-  if (currency === 'VND') {
-    return `₫${new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.abs(amount))}`;
+export function currencySymbol(currency: string): string {
+  switch (currency) {
+    case 'VND': return '₫';
+    case 'EUR': return '€';
+    case 'GBP': return '£';
+    case 'JPY': return '¥';
+    default:    return '$';
   }
-  return `$${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(amount))}`;
+}
+
+export function fmtMoney(amount: number, currency = 'USD'): string {
+  const abs = Math.abs(amount);
+  if (currency === 'VND' || currency === 'JPY') {
+    return `${currencySymbol(currency)}${new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(abs)}`;
+  }
+  return `${currencySymbol(currency)}${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(abs)}`;
 }
 
 export function fmtDate(iso: string): string {

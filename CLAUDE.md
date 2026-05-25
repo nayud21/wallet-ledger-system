@@ -65,3 +65,4 @@ cd backend && ./mvnw test
 - Don't add a "soft delete" flag to `ledger_entries`. The table is append-only.
 - Don't store money as `String` "to be safe". Use `BigDecimal`.
 - Don't add features outside the phase you're working on, even if you spot them — note them and move on.
+- **Never create `.js` files inside `frontend/src/`.** This is a TypeScript project — all new files must use `.ts` or `.tsx`. Creating `.js` duplicates causes Vite to resolve imports to the wrong file (JS is preferred over TS), breaking the app silently.
