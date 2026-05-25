@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import AddWalletModal from '../../components/consumer/wallets/AddWalletModal';
 import { useAuth } from '../../context/AuthContext';
 import { useWallets, useWalletEntries } from '../../hooks/useWallets';
 import ConsumerLayout from '../../components/consumer/ConsumerLayout';
@@ -34,6 +35,7 @@ export default function WalletsPage() {
     [walletsRaw],
   );
 
+  const [addOpen, setAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hidden, setHidden] = useState(false);
   const selected = wallets.find((x) => x.id === selectedId) ?? wallets[0];
@@ -72,7 +74,7 @@ export default function WalletsPage() {
           </div>
           <div className="flex items-center gap-2 self-center">
             <Btn variant="secondary" size="md"><Icon.Exchange className="w-3.5 h-3.5" />Transfer between</Btn>
-            <Btn variant="primary" size="md"><Icon.Plus className="w-3.5 h-3.5" />New wallet</Btn>
+            <Btn variant="primary" size="md" onClick={() => setAddOpen(true)}><Icon.Plus className="w-3.5 h-3.5" />New wallet</Btn>
           </div>
         </div>
 
@@ -155,7 +157,7 @@ export default function WalletsPage() {
                   <div className="text-sm text-slate-500 px-2 py-6 text-center">No wallets yet.</div>
                 )}
               </div>
-              <button className="mt-2 w-full h-10 border-2 border-dashed border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 rounded-xl text-sm font-medium text-slate-500 hover:text-indigo-700 transition-all flex items-center justify-center gap-1.5">
+              <button onClick={() => setAddOpen(true)} className="mt-2 w-full h-10 border-2 border-dashed border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 rounded-xl text-sm font-medium text-slate-500 hover:text-indigo-700 transition-all flex items-center justify-center gap-1.5">
                 <Icon.Plus className="w-3.5 h-3.5" />Add new wallet
               </button>
               <div className="mt-3 pt-3 border-t border-slate-100">
@@ -192,6 +194,7 @@ export default function WalletsPage() {
           </div>
         </div>
       </div>
+      <AddWalletModal open={addOpen} onClose={() => setAddOpen(false)} />
     </ConsumerLayout>
   );
 }
