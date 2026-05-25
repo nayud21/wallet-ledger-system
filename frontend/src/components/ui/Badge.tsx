@@ -26,7 +26,7 @@ const dots: Record<Tone, string> = {
 
 export default function Badge({ tone = 'slate', dot, children }: BadgeProps) {
   return (
-    <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[11px] font-medium ${tones[tone]}`}>
+    <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-xs font-medium ${tones[tone]}`}>
       {dot && <span className={`w-1.5 h-1.5 rounded-full ${dots[tone]}`} />}
       {children}
     </span>

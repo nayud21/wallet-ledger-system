@@ -8,8 +8,8 @@ export default {
         mono: ['Geist Mono', 'ui-monospace', 'monospace'],
       },
       fontSize: {
-        xs:   ['11px', { lineHeight: '16px' }],
-        sm:   ['12.5px', { lineHeight: '18px' }],
+        xs:   ['12px', { lineHeight: '16px' }],
+        sm:   ['14px', { lineHeight: '20px' }],
         base: ['14px', { lineHeight: '20px' }],
       },
     },

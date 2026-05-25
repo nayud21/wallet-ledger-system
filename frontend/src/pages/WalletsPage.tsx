@@ -45,13 +45,13 @@ export default function WalletsPage() {
   ] as const;
 
   return (
-    <div className="p-4 flex flex-col gap-3 h-full">
+    <div className="max-w-[1440px] mx-auto p-4 flex flex-col gap-3 h-full">
       <KpiStrip />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-base font-semibold tracking-tight">Wallets</h1>
-          <p className="text-[11px] text-slate-500">
+          <p className="text-xs text-slate-500">
             {wallets ? `${wallets.length} wallets` : '—'} · last sync just now
           </p>
         </div>
@@ -61,10 +61,10 @@ export default function WalletsPage() {
               <button
                 key={tab.label}
                 onClick={() => { setStatusFilter(tab.value); setSelectedId(null); }}
-                className={`h-7 px-3 text-[12px] border-r border-slate-200 last:border-r-0 transition-colors ${
+                className={`h-7 px-3 text-xs border-r border-slate-200 last:border-r-0 transition-colors ${
                   statusFilter === tab.value
                     ? 'bg-indigo-600 text-white'
-                    : 'text-slate-600 hover:bg-slate-50'
+                    : 'text-slate-600 hover:bg-slate-50/80 transition-colors'
                 }`}
               >
                 {tab.label}

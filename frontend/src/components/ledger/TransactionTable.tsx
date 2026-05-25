@@ -9,7 +9,7 @@ interface TransactionTableProps {
 
 export default function TransactionTable({ transactions, onReverse }: TransactionTableProps) {
   if (transactions.length === 0) {
-    return <p className="text-sm text-slate-400">No transactions found.</p>;
+    return <p className="text-sm text-slate-500">No transactions found.</p>;
   }
 
   return (
@@ -26,9 +26,9 @@ export default function TransactionTable({ transactions, onReverse }: Transactio
       </thead>
       <tbody>
         {transactions.map((tx) => (
-          <tr key={tx.id} className="border-b border-slate-100 hover:bg-slate-50">
+          <tr key={tx.id} className="border-b border-slate-100 hover:bg-slate-50/80 transition-colors">
             <td className="py-1.5 pr-3 tabular-nums text-slate-500">{tx.id}</td>
-            <td className="py-1.5 pr-3 font-mono text-xs text-slate-400">
+            <td className="py-1.5 pr-3 font-mono text-xs text-slate-500">
               {tx.idempotencyKey.slice(0, 12)}…
             </td>
             <td className="py-1.5 pr-3 max-w-[220px] truncate text-slate-700">{tx.description}</td>
@@ -37,7 +37,7 @@ export default function TransactionTable({ transactions, onReverse }: Transactio
                 {tx.status}
               </Badge>
             </td>
-            <td className="py-1.5 pr-3 text-xs text-slate-400">
+            <td className="py-1.5 pr-3 text-xs text-slate-500">
               {new Date(tx.createdAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}
             </td>
             <td className="py-1.5">

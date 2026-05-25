@@ -23,7 +23,8 @@ body {
   border-radius: 4px;
 }
 
-.row-hover:hover { background: #f8fafc; }
+.row-hover { transition: background-color 120ms ease; }
+.row-hover:hover { background: rgb(248 250 252 / 0.8); }
 
 /* Consumer V2 — dark hero card */
 .hero-bg {

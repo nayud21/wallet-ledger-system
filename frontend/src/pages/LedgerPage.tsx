@@ -41,7 +41,7 @@ export default function LedgerPage() {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="max-w-[1440px] mx-auto flex flex-col gap-3">
       <h1 className="text-base font-semibold">Ledger Transactions</h1>
 
       <div className="rounded border border-slate-200 bg-white p-3 overflow-auto">
