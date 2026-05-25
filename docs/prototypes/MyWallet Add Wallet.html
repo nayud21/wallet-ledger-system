@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1280" />
+<title>MyWallet — Add new wallet</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = { theme: { extend: {
+    fontFamily: { sans: ['Geist','system-ui','ui-sans-serif'], mono: ['Geist Mono','ui-monospace','monospace'] },
+  } } }
+</script>
+<style>
+  html, body { background: #f1f5f9; }
+  body { font-family: 'Geist', system-ui, sans-serif; color: #0f172a; -webkit-font-smoothing: antialiased; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  :where(button, a, input, select, textarea):focus { outline: none; }
+  :where(button, a, input, select, textarea):focus-visible {
+    outline: 2px solid #4f46e5; outline-offset: 2px; border-radius: 6px;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+
+  /* Modal animations */
+  @keyframes backdropIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes dialogIn   { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
+  @keyframes dialogOut  { from { opacity: 1; } to { opacity: 0; transform: translateY(6px) scale(0.99); } }
+  @keyframes stepIn     { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+  .backdrop-enter { animation: backdropIn 180ms ease-out both; }
+  .dialog-enter   { animation: dialogIn 240ms cubic-bezier(.2,.7,.2,1) both; }
+  .dialog-exit    { animation: dialogOut 160ms ease-in both; }
+  .step-enter     { animation: stepIn 260ms cubic-bezier(.2,.7,.2,1) both; }
+
+  /* Success animations */
+  @keyframes circlePop { 0% { transform: scale(0); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+  @keyframes ringPing  { 0% { transform: scale(0.8); opacity: 0.55; } 100% { transform: scale(2.2); opacity: 0; } }
+  @keyframes checkDraw { 0% { stroke-dashoffset: 36; } 100% { stroke-dashoffset: 0; } }
+  @keyframes fadeUp    { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .success-circle { animation: circlePop 360ms cubic-bezier(.2,.9,.3,1.2) both; }
+  .success-ring   { animation: ringPing 900ms cubic-bezier(.2,.7,.2,1) 120ms both; }
+  .success-check  { stroke-dasharray: 36; stroke-dashoffset: 36; animation: checkDraw 360ms ease-out 240ms forwards; }
+  .fade-up-1 { animation: fadeUp 320ms ease-out 220ms both; }
+  .fade-up-2 { animation: fadeUp 320ms ease-out 320ms both; }
+  .fade-up-3 { animation: fadeUp 320ms ease-out 420ms both; }
+
+  /* Dark wallet preview surface */
+  .preview-bg {
+    background-color: #020617;
+    background-image:
+      radial-gradient(400px 200px at 100% 0%, rgba(99,102,241,0.25) 0%, transparent 60%),
+      radial-gradient(300px 200px at 0% 100%, rgba(16,185,129,0.12) 0%, transparent 60%),
+      linear-gradient(180deg, #0f172a 0%, #020617 100%);
+  }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+/* ============ Helpers ============ */
+const uuid = () => {
+  const hex = (n)=>Math.floor(Math.random()*16**n).toString(16).padStart(n,'0');
+  return `${hex(8)}-${hex(4)}-4${hex(3)}-${(8+Math.floor(Math.random()*4)).toString(16)}${hex(3)}-${hex(12)}`;
+};
+const fmtMoney = (n, cur) => {
+  if (cur === 'VND' || cur === 'JPY') return `${cur==='VND'?'₫':'¥'}${new Intl.NumberFormat('en-US',{minimumFractionDigits:0,maximumFractionDigits:0}).format(n)}`;
+  const sym = { USD:'$', EUR:'€', GBP:'£', SGD:'S$', AUD:'A$', MXN:'MX$' }[cur] ?? '';
+  return `${sym}${new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n)}`;
+};
+
+/* ============ Icons ============ */
+const Icon = {
+  Plus:        (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" {...p}><path d="M8 3v10M3 8h10"/></svg>),
+  X:           (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" {...p}><path d="M4 4l8 8M12 4l-8 8"/></svg>),
+  ArrowRight:  (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 8h10M9 4l4 4-4 4"/></svg>),
+  ArrowLeft:   (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M13 8H3M7 4L3 8l4 4"/></svg>),
+  Search:      (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3"/></svg>),
+  Check:       (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>),
+  Star:        (p)=>(<svg viewBox="0 0 16 16" fill="currentColor" {...p}><path d="M8 1l2 5h5l-4 3 1.5 5L8 11 3.5 14 5 9 1 6h5z"/></svg>),
+  Plane:       (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M2 9l5-1 2-5 1.5 4.5L13 5.5 14 7l-3.5 1.8L9 14 7.5 10 2 9z"/></svg>),
+  Briefcase:   (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="2.5" y="5" width="11" height="8.5" rx="1"/><path d="M6 5V3.5h4V5M2.5 8.5h11"/></svg>),
+  Piggy:       (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 9a4 4 0 014-4h2a4 4 0 014 4v1H3V9z"/><path d="M3 10v2h1l.5 1h1l.5-1h4l.5 1h1l.5-1h1v-2M11 6.5l1-1.5M5 7.5h0"/></svg>),
+  User:        (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="8" cy="6" r="2.5"/><path d="M3 14c0-2.5 2.2-4 5-4s5 1.5 5 4"/></svg>),
+  Tag:         (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 2H3v5l7 7 5-5-7-7z"/><circle cx="5.5" cy="4.5" r=".8" fill="currentColor" stroke="none"/></svg>),
+  Card:        (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M2 7h12M4.5 10.5h2"/></svg>),
+  Info:        (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="8" cy="8" r="6.5"/><path d="M8 7.5v3.5"/><circle cx="8" cy="5.5" r=".7" fill="currentColor" stroke="none"/></svg>),
+  Shield:      (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 2l5 2v4c0 3-2.5 5-5 6-2.5-1-5-3-5-6V4l5-2z"/><path d="M6 8.5l1.5 1.5L10 7"/></svg>),
+  Globe:       (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="8" cy="8" r="6.5"/><path d="M1.5 8h13M8 1.5c2 2 2 11 0 13M8 1.5c-2 2-2 11 0 13"/></svg>),
+};
+
+/* ============ Currency catalog ============ */
+const CURRENCIES = [
+  { code: 'USD', name: 'US Dollar',          flag: '🇺🇸', region: 'Americas', popular: true,  fx: 1.0000,  custodian: 'Cross River Bank', tone: 'indigo' },
+  { code: 'EUR', name: 'Euro',               flag: '🇪🇺', region: 'Europe',   popular: true,  fx: 0.9259,  custodian: 'Modulr Finance B.V.', tone: 'violet' },
+  { code: 'GBP', name: 'British Pound',      flag: '🇬🇧', region: 'Europe',   popular: true,  fx: 0.7943,  custodian: 'ClearBank Ltd.', tone: 'amber' },
+  { code: 'VND', name: 'Vietnamese Đồng',    flag: '🇻🇳', region: 'Asia',     popular: true,  fx: 25440,   custodian: 'TPBank', tone: 'emerald' },
+  { code: 'JPY', name: 'Japanese Yen',       flag: '🇯🇵', region: 'Asia',     popular: false, fx: 156.42,  custodian: 'Sumitomo Mitsui', tone: 'rose' },
+  { code: 'SGD', name: 'Singapore Dollar',   flag: '🇸🇬', region: 'Asia',     popular: false, fx: 1.3496,  custodian: 'DBS Bank Ltd.', tone: 'sky' },
+  { code: 'AUD', name: 'Australian Dollar',  flag: '🇦🇺', region: 'Oceania',  popular: false, fx: 1.5081,  custodian: 'Macquarie Bank',  tone: 'orange' },
+  { code: 'MXN', name: 'Mexican Peso',       flag: '🇲🇽', region: 'Americas', popular: false, fx: 17.0420, custodian: 'BBVA México',     tone: 'lime' },
+];
+
+const TAGS = [
+  { key: 'Personal',   icon: Icon.User,      tone: 'bg-indigo-50 text-indigo-700  ring-indigo-200' },
+  { key: 'Travel',     icon: Icon.Plane,     tone: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
+  { key: 'Business',   icon: Icon.Briefcase, tone: 'bg-amber-50 text-amber-700   ring-amber-200' },
+  { key: 'Savings',    icon: Icon.Piggy,     tone: 'bg-rose-50 text-rose-700     ring-rose-200' },
+  { key: 'Custom',     icon: Icon.Tag,       tone: 'bg-slate-100 text-slate-700  ring-slate-300' },
+];
+
+const ACCENT_COLORS = [
+  { key: 'indigo',  bg: 'bg-indigo-500',  ring: 'ring-indigo-500'  },
+  { key: 'emerald', bg: 'bg-emerald-500', ring: 'ring-emerald-500' },
+  { key: 'violet',  bg: 'bg-violet-500',  ring: 'ring-violet-500'  },
+  { key: 'rose',    bg: 'bg-rose-500',    ring: 'ring-rose-500'    },
+  { key: 'amber',   bg: 'bg-amber-500',   ring: 'ring-amber-500'   },
+  { key: 'sky',     bg: 'bg-sky-500',     ring: 'ring-sky-500'     },
+  { key: 'slate',   bg: 'bg-slate-700',   ring: 'ring-slate-700'   },
+];
+
+/* ============ Primitives ============ */
+const Btn = ({ variant='primary', size='md', children, className='', ...rest }) => {
+  const sizes = { sm:'h-8 px-3 text-[13px]', md:'h-10 px-4 text-sm', lg:'h-11 px-5 text-[15px]' };
+  const variants = {
+    primary:   'bg-indigo-600 text-white hover:bg-indigo-700 active:bg-indigo-800 border border-indigo-700/40 shadow-sm shadow-indigo-600/20 disabled:bg-indigo-300 disabled:border-indigo-300 disabled:shadow-none disabled:cursor-not-allowed',
+    secondary: 'bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 border border-slate-200',
+    outline:   'bg-transparent text-slate-700 hover:bg-slate-50 hover:border-slate-300 border border-slate-300 disabled:text-slate-400 disabled:cursor-not-allowed',
+    ghost:     'bg-transparent text-slate-600 hover:bg-slate-100 border border-transparent',
+  };
+  return (
+    <button className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition-all cursor-pointer ${sizes[size]} ${variants[variant]} ${className}`} {...rest}>{children}</button>
+  );
+};
+
+/* ============ Currency mini-card ============ */
+const CurrencyCard = ({ c, active, onSelect }) => (
+  <button
+    onClick={onSelect}
+    className={`group cursor-pointer text-left border rounded-xl p-3 transition-all ${active ? 'border-indigo-500 bg-indigo-50/40 ring-2 ring-indigo-100 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/60'}`}
+  >
+    <div className="flex items-center gap-2.5">
+      <div className="w-9 h-9 rounded-lg bg-slate-50 border border-slate-200 grid place-items-center text-xl">{c.flag}</div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-sm font-semibold text-slate-900">{c.code}</span>
+          {c.popular && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200/60">Popular</span>}
+        </div>
+        <div className="text-xs text-slate-500 truncate">{c.name}</div>
+      </div>
+      {active && (
+        <div className="w-5 h-5 rounded-full bg-indigo-600 grid place-items-center shrink-0 shadow-sm">
+          <Icon.Check className="w-3 h-3 text-white"/>
+        </div>
+      )}
+    </div>
+    <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+      <span className="text-slate-500">1 USD =</span>
+      <span className="font-mono text-slate-800 font-medium num">{c.code === 'USD' ? '1.0000' : c.fx.toLocaleString('en-US', { maximumFractionDigits: 4, minimumFractionDigits: 4 })} <span className="text-slate-400">{c.code}</span></span>
+    </div>
+  </button>
+);
+
+/* ============ Step indicator ============ */
+const StepRail = ({ step, labels }) => (
+  <div className="flex items-center gap-2">
+    {labels.map((l, i) => {
+      const filled = i <= step;
+      const isCurrent = i === step;
+      const isDone = i < step;
+      return (
+        <React.Fragment key={i}>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className={`w-6 h-6 rounded-full grid place-items-center text-[11px] font-semibold shrink-0 transition-colors ${isDone ? 'bg-emerald-600 text-white' : isCurrent ? 'bg-indigo-600 text-white ring-4 ring-indigo-100' : 'bg-slate-100 text-slate-400'}`}>
+              {isDone ? <Icon.Check className="w-3 h-3"/> : i+1}
+            </div>
+            <span className={`text-xs font-medium hidden sm:inline ${isCurrent ? 'text-slate-900' : filled ? 'text-slate-700' : 'text-slate-400'}`}>{l}</span>
+          </div>
+          {i < labels.length-1 && <div className={`flex-1 h-px ${i < step ? 'bg-emerald-500' : 'bg-slate-200'}`}/>}
+        </React.Fragment>
+      );
+    })}
+  </div>
+);
+
+/* ============ Live preview ============ */
+const WalletPreview = ({ currency, nickname, tag, accent, primary, initialAmount }) => {
+  const c = CURRENCIES.find(x => x.code === currency);
+  const amt = parseFloat(initialAmount) || 0;
+  const accentMeta = ACCENT_COLORS.find(a => a.key === accent) || ACCENT_COLORS[0];
+  return (
+    <div className="preview-bg rounded-xl text-white relative overflow-hidden border border-slate-800/80 shadow-xl shadow-slate-900/30">
+      {/* Decorative accent bar */}
+      <div className={`absolute top-0 left-0 right-0 h-0.5 ${accentMeta.bg}`}/>
+
+      <div className="p-5">
+        <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400 font-medium">
+          <span className={`w-1.5 h-1.5 rounded-full ${accentMeta.bg}`}/>
+          <span className="text-slate-300 truncate">{nickname || `${c.code} Wallet`}</span>
+          <span className="text-slate-600 shrink-0">·</span>
+          <span className="font-mono normal-case tracking-normal text-slate-500 truncate">wlt_{Math.random().toString(16).slice(2,8)}</span>
+        </div>
+
+        <div className="mt-4 flex items-end gap-2">
+          <div className="text-[32px] leading-none font-semibold tracking-tight num text-white">
+            {fmtMoney(amt, currency)}
+          </div>
+          <div className="text-slate-400 text-xs font-medium font-mono pb-1">{currency}</div>
+        </div>
+
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 h-6 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-300/25">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-300"/>ACTIVE
+          </span>
+          <span className="inline-flex items-center text-[11px] font-medium px-2 h-6 rounded-full bg-white/5 text-slate-300 border border-white/10 font-mono">{currency}</span>
+          {primary && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 h-6 rounded-full bg-indigo-400/15 text-indigo-200 border border-indigo-300/25">
+              <Icon.Star className="w-2.5 h-2.5"/>PRIMARY
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 h-6 rounded-full bg-white/5 text-slate-300 border border-white/10">
+            <span className="text-base leading-none">{c.flag}</span>{tag}
+          </span>
+        </div>
+
+        <div className="mt-5 pt-4 border-t border-white/10 grid grid-cols-2 gap-3 text-xs">
+          <div>
+            <div className="text-slate-500 text-[10px] uppercase tracking-wider font-medium">Custodian</div>
+            <div className="text-slate-200 mt-0.5 truncate">{c.custodian}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-slate-500 text-[10px] uppercase tracking-wider font-medium">FX (1 USD)</div>
+            <div className="text-slate-200 mt-0.5 num font-mono">{c.code === 'USD' ? '1.0000' : c.fx.toLocaleString('en-US', { maximumFractionDigits: 2 })} {c.code}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ============ Modal ============ */
+const AddWalletModal = ({ open, onClose, onCreated }) => {
+  const [step, setStep] = useState(0);
+  const [exiting, setExiting] = useState(false);
+
+  // Form state
+  const [currency, setCurrency] = useState('VND');
+  const [search, setSearch] = useState('');
+  const [tab, setTab] = useState('popular'); // popular | all
+  const [nickname, setNickname] = useState('Travel Spending');
+  const [tag, setTag] = useState('Travel');
+  const [accent, setAccent] = useState('emerald');
+  const [primary, setPrimary] = useState(false);
+  const [initialAmount, setInitialAmount] = useState('');
+  const [fundingSource, setFundingSource] = useState('none'); // none | usd | card
+  const [agreed, setAgreed] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  const c = CURRENCIES.find(x => x.code === currency);
+  const filteredCurrencies = useMemo(() => CURRENCIES.filter(x => {
+    if (tab === 'popular' && !x.popular) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return x.code.toLowerCase().includes(q) || x.name.toLowerCase().includes(q) || x.region.toLowerCase().includes(q);
+  }), [tab, search]);
+
+  // ESC + backdrop
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (e.key === 'Escape') requestClose(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [open]);
+
+  const requestClose = useCallback(() => {
+    setExiting(true);
+    setTimeout(() => { setExiting(false); onClose(); reset(); }, 160);
+  }, [onClose]);
+
+  const reset = () => {
+    setStep(0);
+    setCurrency('VND'); setSearch(''); setTab('popular');
+    setNickname('Travel Spending'); setTag('Travel'); setAccent('emerald');
+    setPrimary(false); setInitialAmount(''); setFundingSource('none'); setAgreed(false);
+    setCreating(false);
+  };
+
+  const handleCreate = () => {
+    setCreating(true);
+    setTimeout(() => { setCreating(false); setStep(3); }, 900);
+  };
+
+  if (!open) return null;
+
+  const labels = ['Choose currency', 'Customize', 'Review'];
+
+  return (
+    <div className={`fixed inset-0 z-50 flex items-center justify-center ${exiting ? '' : 'backdrop-enter'}`}>
+      {/* Backdrop */}
+      <div
+        onClick={requestClose}
+        className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm"
+      />
+      {/* Dialog */}
+      <div className={`relative w-[min(960px,calc(100%-32px))] max-h-[calc(100vh-32px)] bg-white rounded-2xl shadow-2xl shadow-slate-900/30 border border-slate-200 flex flex-col overflow-hidden ${exiting ? 'dialog-exit' : 'dialog-enter'}`}>
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-slate-200">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-indigo-600 grid place-items-center text-white shadow-sm shadow-indigo-600/30">
+                <Icon.Plus className="w-4 h-4"/>
+              </div>
+              <div>
+                <div className="text-[15px] font-semibold tracking-tight text-slate-900">Add a new wallet</div>
+                <div className="text-xs text-slate-500 mt-0.5">Hold balances in another currency · {step < 3 ? `step ${step+1} of 3` : 'completed'}</div>
+              </div>
+            </div>
+            <button onClick={requestClose} className="h-8 w-8 grid place-items-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900 cursor-pointer">
+              <Icon.X className="w-4 h-4"/>
+            </button>
+          </div>
+
+          {step < 3 && (
+            <div className="mt-5">
+              <StepRail step={step} labels={labels}/>
+            </div>
+          )}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 min-h-0 overflow-auto">
+          {step === 0 && (
+            <Step0Currency
+              key="s0"
+              currencies={filteredCurrencies}
+              currency={currency} setCurrency={setCurrency}
+              search={search} setSearch={setSearch}
+              tab={tab} setTab={setTab}
+            />
+          )}
+          {step === 1 && (
+            <Step1Customize
+              key="s1"
+              c={c}
+              nickname={nickname} setNickname={setNickname}
+              tag={tag} setTag={setTag}
+              accent={accent} setAccent={setAccent}
+              primary={primary} setPrimary={setPrimary}
+              initialAmount={initialAmount} setInitialAmount={setInitialAmount}
+              fundingSource={fundingSource} setFundingSource={setFundingSource}
+            />
+          )}
+          {step === 2 && (
+            <Step2Review
+              key="s2"
+              c={c} nickname={nickname} tag={tag} accent={accent}
+              primary={primary} initialAmount={initialAmount} fundingSource={fundingSource}
+              agreed={agreed} setAgreed={setAgreed}
+            />
+          )}
+          {step === 3 && (
+            <Step3Success
+              key="s3"
+              c={c} nickname={nickname} tag={tag}
+              walletId={`wlt_${Math.random().toString(16).slice(2,8)}`}
+            />
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50/60 flex items-center justify-between gap-3">
+          <div className="text-xs text-slate-500 flex items-center gap-2 min-w-0">
+            <Icon.Shield className="w-3.5 h-3.5 text-emerald-600 shrink-0"/>
+            <span className="truncate">Funds custodied by partner banks · FDIC insured up to $250,000</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {step === 0 && (
+              <>
+                <Btn variant="ghost" size="md" onClick={requestClose}>Cancel</Btn>
+                <Btn variant="primary" size="md" onClick={() => setStep(1)} disabled={!currency}>Continue <Icon.ArrowRight className="w-4 h-4"/></Btn>
+              </>
+            )}
+            {step === 1 && (
+              <>
+                <Btn variant="outline" size="md" onClick={() => setStep(0)}><Icon.ArrowLeft className="w-4 h-4"/>Back</Btn>
+                <Btn variant="primary" size="md" onClick={() => setStep(2)} disabled={!nickname.trim()}>Continue <Icon.ArrowRight className="w-4 h-4"/></Btn>
+              </>
+            )}
+            {step === 2 && (
+              <>
+                <Btn variant="outline" size="md" onClick={() => setStep(1)} disabled={creating}><Icon.ArrowLeft className="w-4 h-4"/>Back</Btn>
+                <Btn variant="primary" size="md" onClick={handleCreate} disabled={!agreed || creating}>
+                  {creating ? <><Spinner/>Creating…</> : <>Create wallet <Icon.Check className="w-4 h-4"/></>}
+                </Btn>
+              </>
+            )}
+            {step === 3 && (
+              <>
+                <Btn variant="outline" size="md" onClick={() => { reset(); }}>Add another</Btn>
+                <Btn variant="primary" size="md" onClick={() => { onCreated && onCreated({ currency, nickname, tag, accent, primary, initialAmount }); requestClose(); }}>View wallet <Icon.ArrowRight className="w-4 h-4"/></Btn>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Spinner = () => (
+  <svg className="w-4 h-4 animate-spin" viewBox="0 0 16 16" fill="none">
+    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2"/>
+    <path d="M14 8a6 6 0 00-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+);
+
+/* ============ Step 0 — Choose currency ============ */
+const Step0Currency = ({ currencies, currency, setCurrency, search, setSearch, tab, setTab }) => {
+  return (
+    <div className="step-enter px-6 py-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+        {/* Left: picker */}
+        <div className="min-w-0">
+          <div className="text-sm font-semibold tracking-tight text-slate-900">What currency do you want to hold?</div>
+          <p className="text-xs text-slate-500 mt-1">Each wallet holds one currency. You can move between wallets at any time via Exchange.</p>
+
+          {/* Search + tabs */}
+          <div className="mt-4 flex items-center gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <Icon.Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
+              <input
+                placeholder="Search by code, name, or region…"
+                value={search}
+                onChange={e=>setSearch(e.target.value)}
+                className="h-9 w-full pl-8 pr-3 text-sm bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-400"
+              />
+            </div>
+            <div className="inline-flex h-9 bg-slate-50 border border-slate-200 rounded-lg p-0.5 text-xs">
+              {[['popular','Popular'],['all','All currencies']].map(([k,l]) => (
+                <button key={k} onClick={()=>setTab(k)} className={`px-3 h-full rounded-md font-medium transition-colors cursor-pointer ${tab===k ? 'bg-white text-slate-800 border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Grid */}
+          <div className="mt-4 grid grid-cols-2 gap-2.5">
+            {currencies.map(c => (
+              <CurrencyCard key={c.code} c={c} active={currency === c.code} onSelect={() => setCurrency(c.code)}/>
+            ))}
+            {currencies.length === 0 && (
+              <div className="col-span-2 text-center py-12 text-sm text-slate-500">
+                No currencies match "<span className="text-slate-700 font-medium">{search}</span>". <button onClick={()=>setSearch('')} className="text-indigo-600 hover:text-indigo-800">Clear search</button>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 text-[11px] text-slate-500 flex items-start gap-1.5">
+            <Icon.Info className="w-3.5 h-3.5 mt-0.5 text-slate-400 shrink-0"/>
+            <span>Don't see a currency you need? <button className="text-indigo-700 font-medium hover:text-indigo-900">Request currency support →</button></span>
+          </div>
+        </div>
+
+        {/* Right: selection info card */}
+        <aside className="bg-slate-50 border border-slate-200 rounded-xl p-4 h-fit">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-2">Selected currency</div>
+          {(() => {
+            const c = CURRENCIES.find(x => x.code === currency);
+            return (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-lg bg-white border border-slate-200 grid place-items-center text-2xl">{c.flag}</div>
+                  <div className="min-w-0">
+                    <div className="text-base font-bold tracking-tight font-mono text-slate-900">{c.code}</div>
+                    <div className="text-xs text-slate-500 truncate">{c.name}</div>
+                  </div>
+                </div>
+                <dl className="mt-4 divide-y divide-slate-200 text-xs">
+                  <Row label="Region">{c.region}</Row>
+                  <Row label="Custodian">
+                    <span className="text-right truncate">{c.custodian}</span>
+                  </Row>
+                  <Row label="FX rate"><span className="num font-mono">1 USD = {c.code==='USD'?'1.0000':c.fx.toLocaleString('en-US',{maximumFractionDigits:4, minimumFractionDigits:4})} {c.code}</span></Row>
+                  <Row label="Fees"><span className="text-emerald-700 font-medium">No monthly fee</span></Row>
+                  <Row label="Daily send"><span className="font-mono num">{fmtMoney(c.code==='VND'?250000000:10000, c.code)}</span></Row>
+                </dl>
+              </>
+            );
+          })()}
+        </aside>
+      </div>
+    </div>
+  );
+};
+
+const Row = ({ label, children }) => (
+  <div className="flex items-center justify-between py-2 gap-2">
+    <dt className="text-slate-500 uppercase tracking-wider text-[10px] font-semibold shrink-0">{label}</dt>
+    <dd className="text-slate-800 min-w-0 truncate text-right">{children}</dd>
+  </div>
+);
+
+/* ============ Step 1 — Customize ============ */
+const Step1Customize = ({ c, nickname, setNickname, tag, setTag, accent, setAccent, primary, setPrimary, initialAmount, setInitialAmount, fundingSource, setFundingSource }) => {
+  const amountNum = parseFloat(initialAmount) || 0;
+  const decimals = (initialAmount.split('.')[1] || '').length;
+  const amountError =
+    initialAmount && initialAmount.startsWith('-') ? 'Amount must be positive.' :
+    initialAmount && decimals > 2 ? 'Use at most 2 decimal places.' :
+    null;
+
+  return (
+    <div className="step-enter grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 px-6 py-5">
+      {/* LEFT: form */}
+      <div className="min-w-0 space-y-5">
+        <div>
+          <div className="text-sm font-semibold tracking-tight text-slate-900">Set up your <span className="font-mono text-indigo-700">{c.code}</span> wallet</div>
+          <p className="text-xs text-slate-500 mt-1">A nickname and tag make it easy to recognize. You can change these later.</p>
+        </div>
+
+        {/* Nickname */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider">Nickname</label>
+            <span className="text-[11px] text-slate-400 num">{nickname.length}/32</span>
+          </div>
+          <input
+            value={nickname}
+            onChange={e=>setNickname(e.target.value.slice(0, 32))}
+            placeholder="e.g. Travel Spending, Rent Pot"
+            className="h-10 w-full px-3 text-sm bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-400"
+          />
+          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+            <span className="text-[11px] text-slate-500">Suggestions:</span>
+            {[`${c.code} Main`, `${c.code} Savings`, 'Travel Spending', 'Family'].map(s => (
+              <button key={s} type="button" onClick={()=>setNickname(s)} className="h-6 px-2 text-[11px] rounded-md border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-600 cursor-pointer transition-colors">{s}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Tag */}
+        <div>
+          <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider block mb-1.5">Tag</label>
+          <div className="grid grid-cols-5 gap-2">
+            {TAGS.map(t => {
+              const I = t.icon;
+              const active = tag === t.key;
+              return (
+                <button key={t.key} type="button" onClick={()=>setTag(t.key)} className={`group border rounded-lg p-2 transition-all cursor-pointer ${active ? 'border-indigo-500 ring-2 ring-indigo-100 bg-indigo-50/40' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}>
+                  <div className={`w-7 h-7 mx-auto rounded-md grid place-items-center ring-1 ${t.tone}`}>
+                    <I className="w-3.5 h-3.5"/>
+                  </div>
+                  <div className={`mt-1.5 text-[11px] font-medium ${active ? 'text-indigo-700' : 'text-slate-700'}`}>{t.key}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Accent color */}
+        <div>
+          <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider block mb-1.5">Accent color</label>
+          <div className="flex items-center gap-2 flex-wrap">
+            {ACCENT_COLORS.map(a => (
+              <button key={a.key} type="button" onClick={()=>setAccent(a.key)} aria-label={a.key} className={`w-7 h-7 rounded-full ${a.bg} ring-offset-2 transition-all cursor-pointer ${accent === a.key ? `ring-2 ${a.ring}` : 'ring-0 hover:scale-110'}`}/>
+            ))}
+            <span className="text-[11px] text-slate-500 ml-1 capitalize">· {accent}</span>
+          </div>
+        </div>
+
+        {/* Initial top-up */}
+        <div className="pt-4 border-t border-slate-100">
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider">Initial top-up <span className="text-slate-400 font-normal normal-case tracking-normal">(optional)</span></label>
+            <span className="text-[11px] text-slate-400">skip to add funds later</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <FundingPick id="usd"  active={fundingSource==='usd'}  onClick={()=>setFundingSource(s => s==='usd' ? 'none' : 'usd')} icon={Icon.Globe} label="From USD Wallet" sub="instant · no fee"/>
+            <FundingPick id="card" active={fundingSource==='card'} onClick={()=>setFundingSource(s => s==='card' ? 'none' : 'card')} icon={Icon.Card}  label="Card on file" sub="•••• 4282 · Visa"/>
+          </div>
+
+          {fundingSource !== 'none' && (
+            <div className="mt-3 step-enter">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider">Amount</label>
+                <span className="text-[11px] text-slate-500">in {c.code}{amountNum > 0 && fundingSource==='usd' && c.code!=='USD' && <span className="text-slate-400"> · ≈ ${(amountNum/c.fx).toFixed(2)} USD</span>}</span>
+              </div>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-mono text-slate-500">{c.code === 'USD' ? '$' : c.code === 'VND' ? '₫' : c.code === 'EUR' ? '€' : c.code === 'GBP' ? '£' : ''}</span>
+                <input
+                  inputMode="decimal"
+                  value={initialAmount}
+                  onChange={e=>setInitialAmount(e.target.value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1'))}
+                  placeholder="0.00"
+                  className={`h-11 w-full pl-7 pr-20 text-lg font-semibold num bg-white border rounded-lg focus:ring-2 ${amountError ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-100 text-rose-700' : 'border-slate-200 focus:border-indigo-500 focus:ring-indigo-100 text-slate-900'}`}
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-500 font-mono tracking-wider bg-slate-100 px-1.5 py-0.5 rounded">{c.code}</div>
+              </div>
+              {amountError && <div className="text-[12px] text-rose-600 mt-1">{amountError}</div>}
+              <div className="mt-2 grid grid-cols-4 gap-1.5">
+                {(c.code === 'VND' ? [500000, 1000000, 2500000, 5000000] : [50, 100, 250, 500]).map(v => (
+                  <button key={v} type="button" onClick={()=>setInitialAmount(String(v))} className={`h-7 rounded-md border text-xs font-medium num transition-colors cursor-pointer ${parseFloat(initialAmount)===v ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}>
+                    {c.code === 'VND' ? (v >= 1000000 ? `${v/1000000}M` : `${v/1000}k`) : `${fmtMoney(v, c.code)}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Primary toggle */}
+        <div className="pt-4 border-t border-slate-100">
+          <label className="flex items-start gap-3 cursor-pointer group">
+            <div className="relative shrink-0 mt-0.5">
+              <input type="checkbox" checked={primary} onChange={e=>setPrimary(e.target.checked)} className="sr-only peer"/>
+              <div className="w-10 h-6 bg-slate-200 peer-checked:bg-indigo-600 rounded-full transition-colors"/>
+              <div className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4"/>
+            </div>
+            <div>
+              <div className="text-sm font-medium text-slate-900 flex items-center gap-1.5">
+                Make this my primary wallet
+                <Icon.Star className="w-3 h-3 text-amber-500"/>
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">Primary wallet is used as the default for Send, Top Up, and card transactions.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* RIGHT: live preview */}
+      <aside className="space-y-3 lg:sticky lg:top-0 self-start">
+        <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold flex items-center gap-1.5">
+          <span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"/>
+          Live preview
+        </div>
+        <WalletPreview currency={c.code} nickname={nickname} tag={tag} accent={accent} primary={primary} initialAmount={initialAmount}/>
+
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-[11px] text-slate-600 leading-snug">
+          <Icon.Info className="w-3.5 h-3.5 text-slate-400 inline-block align-text-bottom mr-1"/>
+          Preview updates as you type. Wallet ID is generated when you create.
+        </div>
+      </aside>
+    </div>
+  );
+};
+
+const FundingPick = ({ active, onClick, icon: I, label, sub }) => (
+  <button type="button" onClick={onClick} className={`group cursor-pointer text-left border rounded-lg p-2.5 transition-all ${active ? 'border-indigo-500 ring-2 ring-indigo-100 bg-indigo-50/40' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}>
+    <div className="flex items-center gap-2.5">
+      <div className={`w-8 h-8 rounded-lg grid place-items-center ${active ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}>
+        <I className="w-4 h-4"/>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className={`text-sm font-medium ${active ? 'text-indigo-900' : 'text-slate-800'}`}>{label}</div>
+        <div className="text-[11px] text-slate-500 truncate">{sub}</div>
+      </div>
+      <div className={`w-4 h-4 rounded-full border-2 shrink-0 grid place-items-center ${active ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 bg-white'}`}>
+        {active && <Icon.Check className="w-2.5 h-2.5 text-white"/>}
+      </div>
+    </div>
+  </button>
+);
+
+/* ============ Step 2 — Review ============ */
+const Step2Review = ({ c, nickname, tag, accent, primary, initialAmount, fundingSource, agreed, setAgreed }) => {
+  const amt = parseFloat(initialAmount) || 0;
+  return (
+    <div className="step-enter grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 px-6 py-5">
+      <div className="space-y-4 min-w-0">
+        <div>
+          <div className="text-sm font-semibold tracking-tight text-slate-900">Review &amp; create</div>
+          <p className="text-xs text-slate-500 mt-1">Double-check the details. After you create, your wallet is ready to receive funds immediately.</p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 overflow-hidden">
+          <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 grid place-items-center text-xl">{c.flag}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-slate-900">{nickname}</div>
+              <div className="text-xs text-slate-500"><span className="font-mono">{c.code}</span> · {c.name} · {tag}</div>
+            </div>
+            {primary && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60">
+                <Icon.Star className="w-2.5 h-2.5"/>PRIMARY
+              </span>
+            )}
+          </div>
+          <dl className="divide-y divide-slate-100 text-sm">
+            <ReviewRow label="Currency"><span className="font-mono font-medium text-slate-900">{c.code}</span> <span className="text-slate-500 text-xs">· {c.name}</span></ReviewRow>
+            <ReviewRow label="Nickname">{nickname}</ReviewRow>
+            <ReviewRow label="Tag">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{tag}</span>
+            </ReviewRow>
+            <ReviewRow label="Accent">
+              <span className="inline-flex items-center gap-2">
+                <span className={`w-3 h-3 rounded-full ${ACCENT_COLORS.find(a=>a.key===accent).bg}`}/>
+                <span className="capitalize text-slate-700 text-sm">{accent}</span>
+              </span>
+            </ReviewRow>
+            <ReviewRow label="Custodian"><span className="text-slate-700 text-sm">{c.custodian}</span></ReviewRow>
+            <ReviewRow label="Initial top-up">
+              {amt > 0 && fundingSource !== 'none'
+                ? <div className="text-right">
+                    <div className="num font-medium text-slate-900">{fmtMoney(amt, c.code)}</div>
+                    <div className="text-[11px] text-slate-500">from {fundingSource==='usd' ? 'USD Wallet (Main)' : 'card •••• 4282'}</div>
+                  </div>
+                : <span className="text-slate-500 text-sm">None · add funds later</span>}
+            </ReviewRow>
+            {primary && (
+              <ReviewRow label="Primary wallet"><span className="text-amber-700 text-sm font-medium">Yes · replaces USD Wallet (Main)</span></ReviewRow>
+            )}
+          </dl>
+        </div>
+
+        {/* Terms */}
+        <label className="flex items-start gap-2.5 p-3.5 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50/60 transition-colors cursor-pointer">
+          <input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} className="w-4 h-4 mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 shrink-0"/>
+          <span className="text-[13px] text-slate-700 leading-snug">
+            I agree to MyWallet's <button type="button" className="text-indigo-700 font-medium hover:text-indigo-900 underline-offset-2 hover:underline">Wallet Terms</button> and {c.code} {c.code==='USD'?'Custody':'cross-border'} Disclosures. I understand that holding {c.code} carries FX risk against my reporting currency.
+          </span>
+        </label>
+      </div>
+
+      {/* Preview */}
+      <aside className="space-y-3 lg:sticky lg:top-0 self-start">
+        <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Wallet to be created</div>
+        <WalletPreview currency={c.code} nickname={nickname} tag={tag} accent={accent} primary={primary} initialAmount={initialAmount}/>
+      </aside>
+    </div>
+  );
+};
+
+const ReviewRow = ({ label, children }) => (
+  <div className="flex items-start justify-between px-4 py-2.5 gap-3">
+    <dt className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold pt-0.5 shrink-0 w-28">{label}</dt>
+    <dd className="text-right min-w-0">{children}</dd>
+  </div>
+);
+
+/* ============ Step 3 — Success ============ */
+const Step3Success = ({ c, nickname, tag, walletId }) => (
+  <div className="step-enter px-6 py-10">
+    <div className="max-w-md mx-auto text-center">
+      <div className="flex justify-center mb-5">
+        <div className="relative w-16 h-16">
+          <span className="absolute inset-0 rounded-full bg-emerald-500 success-ring"/>
+          <div className="success-circle absolute inset-0 rounded-full bg-emerald-600 grid place-items-center">
+            <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <path className="success-check" d="M5 12.5l4.5 4.5L19 7.5"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div className="fade-up-1">
+        <div className="text-xl font-bold tracking-tight text-slate-900">Wallet created</div>
+        <div className="text-sm text-slate-500 mt-1.5">Your <span className="font-mono text-slate-800">{c.code}</span> wallet is active and ready to use.</div>
+      </div>
+
+      <div className="mt-6 rounded-xl bg-slate-50 border border-slate-200 divide-y divide-slate-200 text-left fade-up-2">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 grid place-items-center text-xl">{c.flag}</div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-slate-900">{nickname}</div>
+            <div className="text-xs text-slate-500"><span className="font-mono">{c.code}</span> · {tag}</div>
+          </div>
+        </div>
+        <Row label="Wallet ID"><span className="font-mono text-xs text-slate-800">{walletId}</span></Row>
+        <Row label="Account number"><span className="font-mono text-xs text-slate-800">{c.code}{Math.floor(10000000 + Math.random()*89999999)} {Math.floor(10000000 + Math.random()*89999999)}</span></Row>
+        <Row label="Status"><span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"/>ACTIVE</span></Row>
+        <Row label="Created"><span className="text-xs text-slate-700 num">{new Date().toISOString().slice(0,10)}</span></Row>
+      </div>
+
+      <div className="mt-4 text-[12px] text-slate-500 fade-up-3">
+        A confirmation has been emailed. You can now <button className="text-indigo-700 font-medium hover:text-indigo-900">top up</button>, <button className="text-indigo-700 font-medium hover:text-indigo-900">link a card</button>, or <button className="text-indigo-700 font-medium hover:text-indigo-900">exchange from USD</button>.
+      </div>
+    </div>
+  </div>
+);
+
+/* ============ Page shell — mocks the wallets backdrop and the trigger ============ */
+const App = () => {
+  const [open, setOpen] = useState(true);
+  const [createdLog, setCreatedLog] = useState([]);
+
+  const handleCreated = (data) => {
+    setCreatedLog(prev => [{ ...data, t: new Date() }, ...prev].slice(0, 4));
+  };
+
+  return (
+    <div className="min-h-screen">
+      {/* Mock wallets page behind */}
+      <div className="min-h-screen p-8">
+        <div className="max-w-[1280px] mx-auto">
+          <div className="flex items-end justify-between mb-5">
+            <div>
+              <h1 className="text-[28px] font-bold tracking-tight text-slate-900">Wallets</h1>
+              <p className="text-sm text-slate-500 mt-1">3 wallets · 2 active · 1 frozen</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button className="h-10 px-4 text-sm font-medium rounded-lg bg-white border border-slate-200 hover:bg-slate-50 inline-flex items-center gap-1.5 cursor-pointer">
+                Transfer between
+              </button>
+              <button
+                onClick={() => setOpen(true)}
+                className="h-10 px-4 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-700/40 shadow-sm shadow-indigo-600/20 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Icon.Plus className="w-3.5 h-3.5"/>New wallet
+              </button>
+            </div>
+          </div>
+
+          {/* Stub content */}
+          <div className="grid grid-cols-12 gap-4">
+            <div className="col-span-12 grid grid-cols-4 gap-3">
+              {['Total net worth','Total available','Active wallets','30-day change'].map((l,i)=>(
+                <div key={l} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                  <div className="text-xs uppercase tracking-wider text-slate-600 font-semibold">{l}</div>
+                  <div className="text-[22px] font-bold tracking-tight text-slate-900 mt-2 num">${(12480+i*820).toLocaleString()}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">across 3 wallets</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="col-span-4 bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+              <div className="flex items-center justify-between px-1 pb-2.5 mb-2.5 border-b border-slate-100">
+                <div className="text-sm font-semibold text-slate-900">Your wallets</div>
+                <span className="text-xs text-slate-500">3 total</span>
+              </div>
+              <div className="space-y-2">
+                {['USD Wallet · Main','VND Wallet · Travel','EUR Wallet · Savings'].map(l=>(
+                  <div key={l} className="border border-slate-200 rounded-xl p-3">
+                    <div className="text-sm font-semibold text-slate-900">{l}</div>
+                    <div className="text-xs text-slate-500">wlt_xxxxxx</div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => setOpen(true)} className="mt-2 w-full h-10 border-2 border-dashed border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 rounded-xl text-sm font-medium text-slate-500 hover:text-indigo-700 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                <Icon.Plus className="w-3.5 h-3.5"/>Add new wallet
+              </button>
+            </div>
+
+            <div className="col-span-8 bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+              <div className="text-sm font-semibold text-slate-900">Recently created</div>
+              <div className="mt-3 space-y-2 text-xs text-slate-600">
+                {createdLog.length === 0 && <div className="text-slate-400">— None yet · open the "New wallet" flow to try it out.</div>}
+                {createdLog.map((c, i) => (
+                  <div key={i} className="flex items-center justify-between p-2.5 bg-emerald-50 border border-emerald-200/60 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Icon.Check className="w-3.5 h-3.5 text-emerald-700"/>
+                      <span className="text-emerald-800 font-medium">Created {c.nickname}</span>
+                      <span className="font-mono text-emerald-700/70">· {c.currency}</span>
+                    </div>
+                    <span className="text-emerald-700/70 num">{c.t.toLocaleTimeString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <AddWalletModal open={open} onClose={() => setOpen(false)} onCreated={handleCreated}/>
+
+      {/* Floating re-open button when closed */}
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          className="fixed bottom-6 right-6 h-12 px-5 text-sm font-semibold rounded-full bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-700/40 shadow-lg shadow-indigo-600/30 inline-flex items-center gap-2 cursor-pointer"
+        >
+          <Icon.Plus className="w-4 h-4"/>Open "Add wallet"
+        </button>
+      )}
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
