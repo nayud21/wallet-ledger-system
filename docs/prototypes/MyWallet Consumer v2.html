@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1280" />
+<title>MyWallet — Consumer (v2)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = { theme: { extend: {
+    fontFamily: {
+      sans: ['Geist', 'system-ui', 'ui-sans-serif'],
+      mono: ['Geist Mono', 'ui-monospace', 'monospace'],
+    },
+  } } }
+</script>
+<style>
+  html, body { background: #f1f5f9; }
+  body { font-family: 'Geist', system-ui, sans-serif; color: #0f172a; -webkit-font-smoothing: antialiased; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  :where(button, a, input, select, textarea):focus { outline: none; }
+  :where(button, a, input, select, textarea):focus-visible {
+    outline: 2px solid #4f46e5;
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+  /* Premium dark hero — slate-900 base with subtle warm-cool glow + faint grid texture.
+     Merged into one rule so the grid background-image doesn't wipe the dark gradient. */
+  .hero-bg {
+    background-color: #020617;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px),
+      radial-gradient(600px 280px at 100% 0%, rgba(99,102,241,0.22) 0%, transparent 60%),
+      radial-gradient(420px 240px at 0% 100%, rgba(16,185,129,0.10) 0%, transparent 60%),
+      linear-gradient(180deg, #0f172a 0%, #020617 100%);
+    background-size:
+      32px 32px,
+      32px 32px,
+      auto,
+      auto,
+      auto;
+    background-position:
+      -1px -1px,
+      -1px -1px,
+      0 0,
+      0 0,
+      0 0;
+  }
+  .hero-shadow {
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.04) inset,
+      0 20px 40px -20px rgba(2,6,23,0.5),
+      0 8px 24px -12px rgba(2,6,23,0.35);
+  }
+  @keyframes fade-up { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: none; } }
+  .fade-up { animation: fade-up 280ms cubic-bezier(.2,.7,.2,1) both; }
+  .row-hover:hover { background: #f8fafc; }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect, useRef } = React;
+
+/* ============ Helpers ============ */
+const fmtUSD = (n, opts = {}) =>
+  new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2, ...opts }).format(n);
+const fmtCompact = (n) => {
+  if (Math.abs(n) >= 1000) return `${(n/1000).toFixed(1)}k`;
+  return n.toFixed(0);
+};
+
+/* ============ Icons ============ */
+const Icon = {
+  Logo: (p)=>(
+    <svg viewBox="0 0 28 28" fill="none" {...p}>
+      <rect x="2" y="7" width="24" height="16" rx="4" fill="url(#g1)"/>
+      <rect x="18" y="13" width="7" height="5" rx="1.5" fill="#a5b4fc"/>
+      <circle cx="21.5" cy="15.5" r="1.1" fill="#3730a3"/>
+      <path d="M2 11c3-2 7-3 12-3s9 1 12 3" stroke="#6366f1" strokeWidth="0.7" fill="none" opacity="0.7"/>
+      <defs><linearGradient id="g1" x1="0" y1="0" x2="28" y2="28"><stop stopColor="#4f46e5"/><stop offset="1" stopColor="#3730a3"/></linearGradient></defs>
+    </svg>
+  ),
+  Dashboard: (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="3" width="6" height="8" rx="1"/><rect x="11" y="3" width="6" height="5" rx="1"/><rect x="11" y="10" width="6" height="7" rx="1"/><rect x="3" y="13" width="6" height="4" rx="1"/></svg>),
+  Wallet:    (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 7a2 2 0 012-2h10v12a1 1 0 01-1 1H5a2 2 0 01-2-2V7z"/><path d="M3 6h12"/><circle cx="13" cy="11" r="1" fill="currentColor" stroke="none"/></svg>),
+  Send:      (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 10h14M11 5l6 5-6 5"/></svg>),
+  TopUp:     (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M10 3v12M5 10l5 5 5-5"/><path d="M3 17h14"/></svg>),
+  Exchange:  (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M4 7h10l-2-2m2 2l-2 2"/><path d="M16 13H6l2 2m-2-2l2-2"/></svg>),
+  Withdraw:  (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 13l4 4 4-4"/><path d="M7 17V5"/><rect x="12" y="4" width="5" height="13" rx="1"/></svg>),
+  QR:        (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><path d="M11 11h2v2h-2zM15 11h2M11 15h2v2h-2zM15 15h2v2"/></svg>),
+  History:   (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M4 10a6 6 0 1011-3"/><path d="M4 4v4h4M10 6v4l3 2"/></svg>),
+  Cards:     (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="5" width="14" height="10" rx="2"/><path d="M3 8.5h14M6 12h2"/></svg>),
+  Settings:  (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.6 4.6l1.4 1.4M14 14l1.4 1.4M4.6 15.4L6 14M14 6l1.4-1.4"/></svg>),
+  Help:      (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="10" cy="10" r="7.5"/><path d="M7.5 8a2.5 2.5 0 015 0c0 1.5-2.5 1.8-2.5 3.5"/><circle cx="10" cy="14" r=".6" fill="currentColor" stroke="none"/></svg>),
+  Search:    (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3"/></svg>),
+  Bell:      (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M5 9a5 5 0 0110 0v3l1.5 2.5h-13L5 12V9z"/><path d="M8.5 17a1.5 1.5 0 003 0"/></svg>),
+  Chevron:   (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M4 6l4 4 4-4"/></svg>),
+  ChevronRight:(p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M6 4l4 4-4 4"/></svg>),
+  Eye:       (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.5"/></svg>),
+  EyeOff:    (p)=>(<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 3l14 14"/><path d="M7.5 5.4A8.5 8.5 0 0110 4.5c5 0 8 5.5 8 5.5a14 14 0 01-2.4 3"/><path d="M5.4 7.4A14 14 0 002 10s3 5.5 8 5.5a8.5 8.5 0 003.4-.7"/><path d="M8.5 8.5a2.5 2.5 0 003.4 3.4"/></svg>),
+  ArrowUp:   (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 13V3M4 7l4-4 4 4"/></svg>),
+  ArrowDown: (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 3v10M4 9l4 4 4-4"/></svg>),
+  Filter:    (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M2.5 3.5h11l-4 5v4l-3 1.5v-5.5l-4-5z"/></svg>),
+  Download:  (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 3v8M5 8l3 3 3-3M3 14h10"/></svg>),
+  Trend:     (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M2 12l4-5 3 3 5-7"/><path d="M11 3h3v3"/></svg>),
+  Dot:       (p)=>(<svg viewBox="0 0 8 8" {...p}><circle cx="4" cy="4" r="2.5" fill="currentColor"/></svg>),
+  Plus:      (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" {...p}><path d="M8 3v10M3 8h10"/></svg>),
+  Logout:    (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M9 3H4a1 1 0 00-1 1v8a1 1 0 001 1h5"/><path d="M11 5l3 3-3 3M14 8H7"/></svg>),
+  Warn:      (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 2l6 11H2L8 2z"/><path d="M8 6.5v3"/><circle cx="8" cy="11.2" r=".5" fill="currentColor" stroke="none"/></svg>),
+
+  /* Transaction-type icons */
+  TxCard:    (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M2 7h12M4.5 10.5h2"/></svg>),
+  TxIn:      (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 3v8M4 8l4 4 4-4"/></svg>),
+  TxOut:     (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M8 13V5M4 9l4-4 4 4"/></svg>),
+  TxExch:    (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 6h8L9 4m2 2L9 8"/><path d="M13 10H5l2 2m-2-2l2-2"/></svg>),
+  TxBank:    (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M2 6L8 3l6 3M3 6v6M13 6v6M6 6v6M10 6v6M2 13h12"/></svg>),
+  TxFee:     (p)=>(<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="8" cy="8" r="6"/><path d="M5.5 6.5h5M5.5 9.5h5M9.5 4.5l-3 7"/></svg>),
+};
+
+/* ============ Primitives ============ */
+const Btn = ({ variant='primary', size='md', children, className='', ...rest }) => {
+  const sizes = { xs:'h-7 px-2 text-xs', sm:'h-8 px-3 text-[13px]', md:'h-9 px-3.5 text-sm', lg:'h-10 px-4 text-sm' };
+  const variants = {
+    primary:   'bg-indigo-600 text-white hover:bg-indigo-700 active:bg-indigo-800 border border-indigo-700/40 shadow-sm shadow-indigo-600/20',
+    secondary: 'bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 border border-slate-200',
+    outline:   'bg-transparent text-slate-700 hover:bg-white hover:border-slate-300 border border-slate-300',
+    ghost:     'bg-transparent text-slate-600 hover:bg-slate-100 border border-transparent',
+    onDark:    'bg-white/15 text-white hover:bg-white/25 border border-white/20 backdrop-blur',
+    onDarkSolid:'bg-white text-indigo-700 hover:bg-indigo-50 border border-white shadow-sm',
+    danger:    'bg-rose-600 text-white hover:bg-rose-700 border border-rose-700/40',
+  };
+  return (
+    <button className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition-all ${sizes[size]} ${variants[variant]} ${className}`} {...rest}>
+      {children}
+    </button>
+  );
+};
+
+const Card = ({ children, className='', ...rest }) => (
+  <div className={`bg-white border border-slate-200 rounded-xl ${className}`} {...rest}>{children}</div>
+);
+
+const Badge = ({ tone='slate', dot=true, children }) => {
+  const tones = {
+    slate:   'bg-slate-100 text-slate-700',
+    success: 'bg-emerald-50 text-emerald-700 border border-emerald-200/60',
+    pending: 'bg-amber-50 text-amber-800 border border-amber-200/60',
+    failed:  'bg-rose-50 text-rose-700 border border-rose-200/60',
+    info:    'bg-indigo-50 text-indigo-700 border border-indigo-200/60',
+  };
+  const dots = { slate:'bg-slate-400', success:'bg-emerald-500', pending:'bg-amber-500', failed:'bg-rose-500', info:'bg-indigo-500' };
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 h-5 rounded-full text-[11px] font-medium ${tones[tone]}`}>
+      {dot && <span className={`w-1.5 h-1.5 rounded-full ${dots[tone]}`}/>}
+      {children}
+    </span>
+  );
+};
+
+/* ============ Mock data ============ */
+const USER = { name: 'Alice Nguyen', handle: 'alice', email: 'alice@example.com', initials: 'AN' };
+
+const WALLET = {
+  id: 'wlt_8f3a1c',
+  currency: 'USD',
+  label: 'USD Wallet · Main',
+  balance: 24560.78,
+  available: 24210.50,
+  reserved: 350.28,
+  pan: '•••• 4282',
+  monthChange: 0.0428, // +4.28% vs last month
+};
+
+const KPIS = [
+  { label: 'Income (30d)',      value: 8124.42, delta: 0.122, dir: 'up',   tone: 'emerald' },
+  { label: 'Expenses (30d)',    value: 4710.18, delta: 0.063, dir: 'down', tone: 'rose' },
+  { label: 'Net cashflow',      value: 3414.24, delta: 0.215, dir: 'up',   tone: 'indigo' },
+  { label: 'Savings rate',      value: 0.421,   delta: 0.035, dir: 'up',   tone: 'slate', isPct: true },
+];
+
+const CASHFLOW_7D = [
+  { day: 'Mon', date: 'May 19', income:  620, expense: 410 },
+  { day: 'Tue', date: 'May 20', income:  950, expense: 520 },
+  { day: 'Wed', date: 'May 21', income:  380, expense: 240 },
+  { day: 'Thu', date: 'May 22', income: 1240, expense: 880 },
+  { day: 'Fri', date: 'May 23', income:  720, expense: 1150 },
+  { day: 'Sat', date: 'May 24', income:  180, expense: 640 },
+  { day: 'Sun', date: 'May 25', income: 1480, expense: 320 },
+];
+
+const CATEGORIES = [
+  { name: 'Groceries',     amount: 612.40, pct: 0.18, tone: 'bg-indigo-500' },
+  { name: 'Rent & utilities', amount: 1850.00, pct: 0.41, tone: 'bg-violet-500' },
+  { name: 'Dining',        amount: 388.10, pct: 0.11, tone: 'bg-emerald-500' },
+  { name: 'Transport',     amount: 210.55, pct: 0.07, tone: 'bg-amber-500' },
+  { name: 'Subscriptions', amount: 142.80, pct: 0.05, tone: 'bg-rose-500' },
+  { name: 'Other',         amount: 506.33, pct: 0.18, tone: 'bg-slate-400' },
+];
+
+const TXNS = [
+  { id:'tx_4ab17c98', date:new Date('2026-05-25T10:29:00'), type:'topup',    label:'Top-up via Stripe',         counterparty:'stripe_pi_3OAB29Hk', status:'success', amount:  500.00, dir:'IN' },
+  { id:'tx_4ab102e1', date:new Date('2026-05-25T09:14:00'), type:'transfer', label:'Sent to Linh Nguyen',       counterparty:'wlt_70218a',          status:'success', amount:  180.00, dir:'OUT' },
+  { id:'tx_4aaf91a2', date:new Date('2026-05-24T22:02:00'), type:'card',     label:'Whole Foods Market',        counterparty:'•••• 4282 · Card',    status:'success', amount:   84.27, dir:'OUT' },
+  { id:'tx_4aae0048', date:new Date('2026-05-24T18:47:00'), type:'transfer', label:'Received from Maya Patel',  counterparty:'wlt_99020a',          status:'success', amount:   75.00, dir:'IN' },
+  { id:'tx_4aabc7d9', date:new Date('2026-05-24T11:51:00'), type:'topup',    label:'ACH transfer (Plaid)',      counterparty:'Chase Bank · ••3491', status:'pending', amount:  220.00, dir:'IN' },
+  { id:'tx_4aab1080', date:new Date('2026-05-23T18:30:00'), type:'card',     label:'Grove & Co. — Dinner',      counterparty:'•••• 4282 · Card',    status:'failed',  amount:   58.40, dir:'OUT' },
+  { id:'tx_4aa9f31c', date:new Date('2026-05-23T13:12:00'), type:'transfer', label:'Sent to Hoang Tran',        counterparty:'wlt_70218c',          status:'success', amount:  140.00, dir:'OUT' },
+  { id:'tx_4aa84b00', date:new Date('2026-05-22T16:00:00'), type:'exchange', label:'Exchange USD → VND',        counterparty:'rate 1 USD = 25,440',  status:'success', amount:  300.00, dir:'OUT' },
+  { id:'tx_4aa5a2c1', date:new Date('2026-05-22T08:22:00'), type:'topup',    label:'Top-up via Stripe',         counterparty:'stripe_pi_3OAA01Kj', status:'success', amount:  180.00, dir:'IN' },
+  { id:'tx_4aa3119e', date:new Date('2026-05-21T19:48:00'), type:'card',     label:'Spotify — Family plan',     counterparty:'•••• 4282 · Card',    status:'success', amount:   15.99, dir:'OUT' },
+  { id:'tx_4aa10004', date:new Date('2026-05-21T09:05:00'), type:'fee',      label:'Wire-in fee',               counterparty:'system',               status:'success', amount:    2.50, dir:'OUT' },
+];
+
+const fmtTime = (d) => {
+  const pad = (x)=>String(x).padStart(2,'0');
+  const h = d.getHours();
+  const hh = h%12===0?12:h%12;
+  const ampm = h<12?'AM':'PM';
+  const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return { date:`${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`, time:`${hh}:${pad(d.getMinutes())} ${ampm}` };
+};
+
+/* ============ Sidebar ============ */
+const Sidebar = ({ route, onNav }) => {
+  const nav = [
+    { key:'/dashboard', label:'Dashboard',    icon: Icon.Dashboard },
+    { key:'/wallets',   label:'Wallets',      icon: Icon.Wallet, badge: '2' },
+    { key:'/send',      label:'Send',         icon: Icon.Send },
+    { key:'/top-up',    label:'Top Up',       icon: Icon.TopUp },
+    { key:'/exchange',  label:'Exchange',     icon: Icon.Exchange },
+    { key:'/cards',     label:'Cards',        icon: Icon.Cards },
+    { key:'/history',   label:'History',      icon: Icon.History },
+  ];
+  return (
+    <aside className="w-60 shrink-0 bg-white border-r border-slate-200 flex flex-col">
+      <div className="h-14 px-4 flex items-center gap-2 border-b border-slate-200">
+        <Icon.Logo className="w-7 h-7"/>
+        <div className="leading-tight">
+          <div className="font-semibold text-[14px] tracking-tight">MyWallet</div>
+          <div className="text-[10px] text-slate-400 font-mono">consumer · v2.0</div>
+        </div>
+      </div>
+
+      <nav className="flex-1 p-2 space-y-0.5">
+        <div className="px-2 pt-1 pb-1 text-[10px] uppercase tracking-wider text-slate-400 font-medium">Account</div>
+        {nav.map(it => {
+          const I = it.icon;
+          const active = route === it.key;
+          return (
+            <button
+              key={it.key}
+              onClick={() => onNav(it.key)}
+              className={`w-full flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[13px] font-medium transition-colors ${active ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+            >
+              <I className={`w-[18px] h-[18px] ${active ? 'text-indigo-600' : 'text-slate-400'}`}/>
+              <span>{it.label}</span>
+              {it.badge && (
+                <span className={`ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded ${active ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}>{it.badge}</span>
+              )}
+            </button>
+          );
+        })}
+
+        <div className="px-2 pt-4 pb-1 text-[10px] uppercase tracking-wider text-slate-400 font-medium">System</div>
+        <button className="w-full flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[13px] font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"><Icon.Settings className="w-[18px] h-[18px] text-slate-400"/>Settings</button>
+        <button className="w-full flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[13px] font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"><Icon.Help className="w-[18px] h-[18px] text-slate-400"/>Help & Support</button>
+      </nav>
+
+      <div className="p-2 border-t border-slate-200">
+        <button className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-slate-50 transition-colors">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-[12px] font-semibold grid place-items-center font-mono">{USER.initials}</div>
+          <div className="text-left flex-1 min-w-0">
+            <div className="text-[13px] font-medium text-slate-800 truncate">{USER.name}</div>
+            <div className="text-[11px] text-slate-500 truncate">@{USER.handle}</div>
+          </div>
+          <Icon.Chevron className="w-3.5 h-3.5 text-slate-400"/>
+        </button>
+      </div>
+    </aside>
+  );
+};
+
+/* ============ Top Bar ============ */
+const TopBar = () => (
+  <header className="h-14 shrink-0 bg-white border-b border-slate-200 flex items-center px-6 gap-4">
+    <div className="flex items-center gap-1.5 text-[13px]">
+      <span className="text-slate-400">MyWallet</span>
+      <Icon.ChevronRight className="w-3 h-3 text-slate-300"/>
+      <span className="text-slate-800 font-medium">Dashboard</span>
+    </div>
+
+    <div className="ml-auto flex items-center gap-2">
+      <div className="relative">
+        <Icon.Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
+        <input
+          placeholder="Search transactions, wallets…"
+          className="h-9 w-72 pl-8 pr-12 text-[13px] bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-400"
+        />
+        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono px-1.5 py-0.5 bg-white border border-slate-200 rounded text-slate-500">⌘K</span>
+      </div>
+
+      <button className="h-9 w-9 grid place-items-center rounded-lg hover:bg-slate-100 text-slate-600 relative">
+        <Icon.Bell className="w-[18px] h-[18px]"/>
+        <span className="absolute top-2 right-2.5 w-1.5 h-1.5 rounded-full bg-rose-500 ring-2 ring-white"/>
+      </button>
+
+      <div className="h-6 w-px bg-slate-200 mx-1"/>
+
+      <button className="h-9 pl-1 pr-2 rounded-lg hover:bg-slate-100 flex items-center gap-2">
+        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-[11px] font-semibold grid place-items-center font-mono">{USER.initials}</div>
+        <span className="text-[13px] font-medium text-slate-700">{USER.handle}</span>
+        <Icon.Chevron className="w-3 h-3 text-slate-400"/>
+      </button>
+    </div>
+  </header>
+);
+
+/* ============ HERO: Wallet card + Quick Actions ============ */
+const HeroWallet = ({ hidden, onToggleHide }) => {
+  const w = WALLET;
+  return (
+    <div className="col-span-12 lg:col-span-8 hero-bg hero-shadow rounded-xl text-white relative overflow-hidden border border-slate-800/80">
+      {/* Decorative glow */}
+      <div className="absolute -right-16 -top-16 w-72 h-72 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none"/>
+      <div className="absolute -left-20 bottom-0 w-64 h-64 rounded-full bg-emerald-500/5 blur-3xl pointer-events-none"/>
+
+      <div className="relative p-6 lg:p-7 grid grid-cols-12 gap-6 items-stretch">
+        {/* ===== LEFT: tightly-grouped identity + balance + linked card ===== */}
+        <div className="col-span-12 md:col-span-7 flex flex-col">
+          {/* Wallet identity */}
+          <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400 font-medium">
+            <Icon.Wallet className="w-3.5 h-3.5"/>
+            <span className="text-slate-300">{w.label}</span>
+            <span className="text-slate-600">·</span>
+            <span className="font-mono normal-case tracking-normal text-slate-500">{w.id}</span>
+          </div>
+
+          {/* Balance */}
+          <div className="mt-4 flex items-end gap-2.5">
+            <div className="text-[42px] leading-none font-semibold tracking-tight num text-white">
+              {hidden ? '•••••••••' : `$${fmtUSD(w.balance)}`}
+            </div>
+            <div className="text-slate-400 text-sm font-medium font-mono pb-1.5">{w.currency}</div>
+            <button onClick={onToggleHide} className="ml-1 mb-1 h-7 w-7 grid place-items-center rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-slate-300" aria-label="Toggle balance visibility">
+              {hidden ? <Icon.EyeOff className="w-3.5 h-3.5"/> : <Icon.Eye className="w-3.5 h-3.5"/>}
+            </button>
+          </div>
+
+          {/* Meta row */}
+          <div className="mt-3 flex items-center gap-3 flex-wrap text-[12.5px]">
+            <span className="inline-flex items-center gap-1.5 text-emerald-300 font-medium">
+              <Icon.Trend className="w-3.5 h-3.5"/>
+              <span className="num">+{(w.monthChange*100).toFixed(2)}%</span>
+            </span>
+            <span className="text-slate-500">vs last month</span>
+            <span className="h-3 w-px bg-slate-700"/>
+            <span className="text-slate-400">
+              Available <span className="num text-white font-medium">{hidden ? '•••••' : `$${fmtUSD(w.available)}`}</span>
+            </span>
+            <span className="text-slate-400">
+              Reserved <span className="num text-white font-medium">{hidden ? '•••••' : `$${fmtUSD(w.reserved)}`}</span>
+            </span>
+          </div>
+
+          {/* Linked card — tight, hugs left column */}
+          <div className="mt-auto pt-6">
+            <div className="inline-flex items-center gap-3 p-2.5 pr-4 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer">
+              <div className="w-10 h-7 rounded bg-gradient-to-br from-slate-700 to-slate-800 grid place-items-center relative overflow-hidden border border-white/10">
+                <div className="w-6 h-4 rounded-sm bg-gradient-to-br from-yellow-200 to-amber-500"/>
+              </div>
+              <div className="flex flex-col">
+                <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium leading-tight">Linked card</div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="font-mono text-[13px] text-white tracking-widest">{w.pan}</span>
+                  <span className="text-[9px] text-slate-400 font-bold tracking-wider px-1 py-0.5 rounded bg-white/10">VISA</span>
+                </div>
+              </div>
+              <Icon.ChevronRight className="w-3.5 h-3.5 text-slate-500 ml-1"/>
+            </div>
+          </div>
+        </div>
+
+        {/* ===== RIGHT: status + actions, stacked & aligned ===== */}
+        <div className="col-span-12 md:col-span-5 flex flex-col items-stretch md:items-end justify-between gap-4 md:border-l md:border-white/10 md:pl-6">
+          {/* Status badges, top-aligned */}
+          <div className="flex items-center gap-2 md:justify-end">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 h-6 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-300/25">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-300"/> ACTIVE
+            </span>
+            <span className="inline-flex items-center text-[11px] font-medium px-2 h-6 rounded-full bg-white/5 text-slate-300 border border-white/10 font-mono">{w.currency}</span>
+          </div>
+
+          {/* Mini sparkline / trust indicator */}
+          <div className="hidden md:flex flex-col items-end gap-1.5 text-right">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">30-day balance</div>
+            <svg viewBox="0 0 120 28" className="w-32 h-7">
+              <defs>
+                <linearGradient id="sparkfill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#34d399" stopOpacity="0.35"/>
+                  <stop offset="100%" stopColor="#34d399" stopOpacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="M0,20 L10,18 L20,21 L30,15 L40,17 L50,12 L60,14 L70,9 L80,11 L90,7 L100,9 L110,5 L120,4 L120,28 L0,28 Z" fill="url(#sparkfill)"/>
+              <path d="M0,20 L10,18 L20,21 L30,15 L40,17 L50,12 L60,14 L70,9 L80,11 L90,7 L100,9 L110,5 L120,4" fill="none" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+
+          {/* Actions — bottom-right, aligned with card faceplate */}
+          <div className="flex items-center gap-2 md:justify-end w-full md:w-auto">
+            <button className="inline-flex items-center justify-center gap-1.5 h-9 px-3 text-[13px] font-medium rounded-lg bg-white/5 text-slate-200 hover:bg-white/10 border border-white/15 transition-all whitespace-nowrap">
+              <Icon.Filter className="w-3.5 h-3.5"/>Statements
+            </button>
+            <button className="inline-flex items-center justify-center gap-1.5 h-9 px-4 text-[13px] font-semibold rounded-lg bg-white text-slate-900 hover:bg-indigo-50 border border-white shadow-sm transition-all whitespace-nowrap">
+              <Icon.Plus className="w-3.5 h-3.5"/>Add money
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const QuickAction = ({ icon: I, label, sub, tone='indigo', onClick }) => {
+  const tones = {
+    indigo: 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100',
+    emerald:'text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100',
+    violet: 'text-violet-600 bg-violet-50 group-hover:bg-violet-100',
+    amber:  'text-amber-700 bg-amber-50 group-hover:bg-amber-100',
+    rose:   'text-rose-600 bg-rose-50 group-hover:bg-rose-100',
+    slate:  'text-slate-700 bg-slate-100 group-hover:bg-slate-200',
+  };
+  return (
+    <button
+      onClick={onClick}
+      className="group cursor-pointer w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-transparent hover:border-gray-200 hover:bg-gray-50 active:bg-gray-100 transition-all duration-150 text-left"
+    >
+      <div className={`w-9 h-9 rounded-lg grid place-items-center transition-colors ${tones[tone]}`}>
+        <I className="w-[18px] h-[18px]"/>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-semibold text-slate-800 group-hover:text-slate-900">{label}</div>
+        <div className="text-[11px] text-slate-500 truncate">{sub}</div>
+      </div>
+      <Icon.ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all duration-150"/>
+    </button>
+  );
+};
+
+const QuickActionsCard = ({ onNav }) => (
+  <div className="col-span-12 lg:col-span-4 bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col p-4">
+    <div className="flex items-center justify-between pb-3 mb-2 border-b border-gray-100">
+      <div>
+        <div className="text-[13px] font-semibold text-slate-900">Quick actions</div>
+        <div className="text-[11px] text-slate-500">Common operations</div>
+      </div>
+      <button className="h-7 px-2 text-[11px] font-medium text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-md transition-colors cursor-pointer">Customize</button>
+    </div>
+    <div className="grid grid-cols-1 gap-0.5 flex-1">
+      <QuickAction icon={Icon.Send}     label="Send money"  sub="to a wallet or contact"   tone="indigo"  onClick={()=>onNav('/send')}/>
+      <QuickAction icon={Icon.TopUp}    label="Top up"      sub="card · bank · Apple Pay"  tone="emerald" onClick={()=>onNav('/top-up')}/>
+      <QuickAction icon={Icon.Withdraw} label="Withdraw"    sub="to your linked bank"      tone="violet"/>
+      <QuickAction icon={Icon.Exchange} label="Exchange"    sub="USD ↔ VND, EUR, GBP"      tone="amber"   onClick={()=>onNav('/exchange')}/>
+      <QuickAction icon={Icon.QR}       label="QR code"     sub="receive in person"        tone="slate"/>
+    </div>
+  </div>
+);
+
+/* ============ KPI tiles ============ */
+const KpiCard = ({ k }) => {
+  const valueColor = { emerald:'text-green-700', rose:'text-red-600', indigo:'text-indigo-700', slate:'text-slate-900' }[k.tone];
+  const arrowUp = k.dir === 'up';
+  const positive = (k.tone === 'rose') ? !arrowUp : arrowUp;
+  return (
+    <Card className="p-4 hover:border-slate-300 transition-colors">
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] uppercase tracking-wider text-slate-600 font-semibold">{k.label}</div>
+        <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-1.5 h-5 rounded ${positive ? 'text-green-700 bg-green-100' : 'text-red-600 bg-red-100'}`}>
+          {arrowUp ? <Icon.ArrowUp className="w-3 h-3"/> : <Icon.ArrowDown className="w-3 h-3"/>}
+          {(k.delta*100).toFixed(1)}%
+        </span>
+      </div>
+      <div className={`mt-2 text-[24px] font-bold tracking-tight num ${valueColor}`}>
+        {k.isPct ? `${(k.value*100).toFixed(1)}%` : `$${fmtUSD(k.value)}`}
+      </div>
+      <div className="text-[11px] text-slate-500 mt-0.5">vs previous 30 days</div>
+    </Card>
+  );
+};
+
+/* ============ Cashflow LINE Chart (pure SVG) ============ */
+const CashflowChart = ({ data }) => {
+  const [hover, setHover] = useState(null);
+  const wrapRef = useRef(null);
+  const W = 720, H = 260;
+  const pad = { l: 44, r: 20, t: 18, b: 30 };
+  const innerW = W - pad.l - pad.r;
+  const innerH = H - pad.t - pad.b;
+  const max = Math.max(...data.flatMap(d => [d.income, d.expense]));
+  const yTicks = 4;
+  const tickStep = Math.ceil(max / yTicks / 100) * 100;
+  const yMax = tickStep * yTicks;
+
+  const stepX = innerW / (data.length - 1);
+  const px = (i) => pad.l + stepX * i;
+  const py = (v) => pad.t + innerH - (v / yMax) * innerH;
+
+  // Path builders
+  const pathLine = (key) => data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${px(i).toFixed(1)} ${py(d[key]).toFixed(1)}`).join(' ');
+  const pathArea = (key) => `${pathLine(key)} L ${px(data.length-1).toFixed(1)} ${(pad.t + innerH).toFixed(1)} L ${px(0).toFixed(1)} ${(pad.t + innerH).toFixed(1)} Z`;
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block">
+        <defs>
+          <linearGradient id="incFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.22"/>
+            <stop offset="100%" stopColor="#10b981" stopOpacity="0"/>
+          </linearGradient>
+          <linearGradient id="expFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#f43f5e" stopOpacity="0.18"/>
+            <stop offset="100%" stopColor="#f43f5e" stopOpacity="0"/>
+          </linearGradient>
+        </defs>
+
+        {/* Y grid + labels */}
+        {Array.from({ length: yTicks + 1 }).map((_, i) => {
+          const y = pad.t + (innerH / yTicks) * i;
+          const v = yMax - (tickStep * i);
+          return (
+            <g key={i}>
+              <line x1={pad.l} y1={y} x2={W - pad.r} y2={y} stroke="#e5e7eb" strokeDasharray={i === yTicks ? '0' : '3 3'}/>
+              <text x={pad.l - 8} y={y + 4} textAnchor="end" className="fill-slate-400" style={{ fontSize: 10, fontFamily: 'Geist Mono, monospace' }}>${fmtCompact(v)}</text>
+            </g>
+          );
+        })}
+
+        {/* Area fills */}
+        <path d={pathArea('income')}  fill="url(#incFill)"/>
+        <path d={pathArea('expense')} fill="url(#expFill)"/>
+
+        {/* Lines */}
+        <path d={pathLine('expense')} fill="none" stroke="#f43f5e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d={pathLine('income')}  fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+
+        {/* Hover guideline */}
+        {hover !== null && (
+          <line x1={px(hover)} x2={px(hover)} y1={pad.t} y2={pad.t + innerH} stroke="#94a3b8" strokeDasharray="3 3" strokeWidth="1"/>
+        )}
+
+        {/* Data dots */}
+        {data.map((d, i) => {
+          const isHover = hover === i;
+          return (
+            <g key={d.day}>
+              {/* hit area */}
+              <rect x={px(i) - stepX/2} y={pad.t} width={stepX} height={innerH} fill="transparent" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}/>
+              {/* dots */}
+              <circle cx={px(i)} cy={py(d.income)}  r={isHover ? 5 : 3} fill="#fff" stroke="#10b981" strokeWidth="2" className="transition-all"/>
+              <circle cx={px(i)} cy={py(d.expense)} r={isHover ? 5 : 3} fill="#fff" stroke="#f43f5e" strokeWidth="2" className="transition-all"/>
+              {/* x label */}
+              <text x={px(i)} y={H - 10} textAnchor="middle" className={isHover ? 'fill-slate-900' : 'fill-slate-500'} style={{ fontSize: 11, fontWeight: isHover ? 600 : 500 }}>{d.day}</text>
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* Tooltip */}
+      {hover !== null && (() => {
+        const total = data.length;
+        // Position tooltip percentage along visible width, then shift to keep on-screen
+        const xPct = (px(hover) / W) * 100;
+        const shift = hover === 0 ? '0%' : hover === total - 1 ? '-100%' : '-50%';
+        return (
+          <div
+            className="absolute pointer-events-none bg-slate-900 text-white text-[11px] rounded-lg px-3 py-2 shadow-xl fade-up border border-white/5"
+            style={{ left: `${xPct}%`, top: 4, transform: `translateX(${shift})`, minWidth: 150 }}
+          >
+            <div className="font-medium text-white mb-1">{data[hover].date}</div>
+            <div className="flex items-center justify-between gap-3 num">
+              <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400"/>Income</span>
+              <span className="text-emerald-300">+${fmtUSD(data[hover].income)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 num">
+              <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-rose-400"/>Expenses</span>
+              <span className="text-rose-300">−${fmtUSD(data[hover].expense)}</span>
+            </div>
+            <div className="border-t border-white/10 mt-1.5 pt-1.5 flex items-center justify-between num">
+              <span>Net</span>
+              <span className={data[hover].income - data[hover].expense >= 0 ? 'text-emerald-300' : 'text-rose-300'}>
+                {data[hover].income - data[hover].expense >= 0 ? '+' : '−'}${fmtUSD(Math.abs(data[hover].income - data[hover].expense))}
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+};
+
+const CashflowCard = () => {
+  const [range, setRange] = useState('7d');
+  const totals = useMemo(() => ({
+    income: CASHFLOW_7D.reduce((a,b)=>a+b.income,0),
+    expense: CASHFLOW_7D.reduce((a,b)=>a+b.expense,0),
+  }), []);
+  const net = totals.income - totals.expense;
+  return (
+    <Card className="col-span-12 lg:col-span-7 p-4">
+      <div className="flex items-start justify-between mb-3 gap-3">
+        <div>
+          <div className="text-[14px] font-semibold tracking-tight text-slate-900">Cashflow</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">May 19 – May 25, 2026 · USD</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex h-7 bg-slate-50 border border-slate-200 rounded-lg p-0.5 text-[11px]">
+            {['7d','30d','90d'].map(r => (
+              <button key={r} onClick={()=>setRange(r)} className={`px-2 h-full rounded-md font-medium transition-colors cursor-pointer ${range===r ? 'bg-white text-slate-800 border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}>{r}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Totals strip — dense */}
+      <div className="grid grid-cols-3 gap-3 mb-3 pb-3 border-b border-slate-100">
+        <div>
+          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-slate-500 font-semibold"><span className="w-2 h-2 rounded-sm bg-emerald-500"/>Income</div>
+          <div className="mt-0.5 text-[16px] font-bold num text-green-700">+${fmtUSD(totals.income)}</div>
+        </div>
+        <div>
+          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-slate-500 font-semibold"><span className="w-2 h-2 rounded-sm bg-rose-500"/>Expenses</div>
+          <div className="mt-0.5 text-[16px] font-bold num text-red-600">−${fmtUSD(totals.expense)}</div>
+        </div>
+        <div>
+          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-slate-500 font-semibold"><span className="w-2 h-2 rounded-sm bg-indigo-500"/>Net</div>
+          <div className={`mt-0.5 text-[16px] font-bold num ${net >= 0 ? 'text-green-700' : 'text-red-600'}`}>{net >= 0 ? '+' : '−'}${fmtUSD(Math.abs(net))}</div>
+        </div>
+      </div>
+
+      <CashflowChart data={CASHFLOW_7D}/>
+    </Card>
+  );
+};
+
+/* ============ Top spending categories ============ */
+const CategoriesCard = () => {
+  const total = CATEGORIES.reduce((a,b)=>a+b.amount, 0);
+  return (
+    <Card className="col-span-12 lg:col-span-4 p-5">
+      <div className="flex items-start justify-between mb-2">
+        <div>
+          <div className="text-[15px] font-semibold tracking-tight">Top categories</div>
+          <div className="text-[12px] text-slate-500 mt-0.5">Spending breakdown · 30d</div>
+        </div>
+        <Btn variant="ghost" size="xs">Details →</Btn>
+      </div>
+
+      {/* Stacked bar */}
+      <div className="mt-3 h-2.5 w-full rounded-full bg-slate-100 overflow-hidden flex">
+        {CATEGORIES.map(c => (
+          <div key={c.name} className={`h-full ${c.tone}`} style={{ width: `${c.pct*100}%` }} title={`${c.name} · $${fmtUSD(c.amount)}`}/>
+        ))}
+      </div>
+
+      <div className="mt-4 space-y-2.5">
+        {CATEGORIES.map(c => (
+          <div key={c.name} className="flex items-center gap-3 text-[12px] hover:bg-slate-50 -mx-2 px-2 py-1 rounded">
+            <span className={`w-2 h-2 rounded-full ${c.tone} shrink-0`}/>
+            <span className="text-slate-700 flex-1 truncate">{c.name}</span>
+            <span className="num text-slate-500 w-10 text-right">{(c.pct*100).toFixed(0)}%</span>
+            <span className="num text-slate-900 font-medium w-16 text-right">${fmtUSD(c.amount)}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[12px]">
+        <span className="text-slate-500">Total spent</span>
+        <span className="num font-semibold text-slate-900">${fmtUSD(total)}</span>
+      </div>
+    </Card>
+  );
+};
+
+/* ============ Compact Transactions Panel (right column) ============ */
+const TxnPanel = () => {
+  const [filter, setFilter] = useState('all');
+  const [hoverRow, setHoverRow] = useState(null);
+  const filtered = TXNS.filter(t => filter === 'all' ? true : t.dir === filter);
+
+  return (
+    <Card className="col-span-12 lg:col-span-5 p-0 flex flex-col">
+      <div className="px-4 py-3 flex items-center justify-between border-b border-slate-200">
+        <div>
+          <div className="text-[14px] font-semibold tracking-tight text-slate-900">Recent transactions</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">{filtered.length} of {TXNS.length} · last 4 days</div>
+        </div>
+        <div className="inline-flex h-7 bg-slate-50 border border-slate-200 rounded-lg p-0.5 text-[11px]">
+          {[['all','All'],['IN','In'],['OUT','Out']].map(([k,l]) => (
+            <button key={k} onClick={()=>setFilter(k)} className={`px-2 h-full rounded-md font-medium transition-colors cursor-pointer ${filter===k ? 'bg-white text-slate-800 border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Column header */}
+      <div className="grid grid-cols-[88px_1fr_120px] gap-3 px-4 py-2 border-b border-slate-200 bg-slate-50/60 text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+        <div>Date</div>
+        <div>Transaction</div>
+        <div className="text-right">Amount</div>
+      </div>
+
+      {/* Rows */}
+      <div className="flex-1 overflow-auto">
+        {filtered.map((t, i) => {
+          const meta = TypeMeta[t.type];
+          const TI = meta.icon;
+          const dt = fmtTime(t.date);
+          const isLast = i === filtered.length - 1;
+          const isHover = hoverRow === t.id;
+          const dateShort = dt.date.split(',')[0];
+          return (
+            <div
+              key={t.id}
+              onMouseEnter={() => setHoverRow(t.id)}
+              onMouseLeave={() => setHoverRow(null)}
+              className={`grid grid-cols-[88px_1fr_120px] gap-3 px-4 py-2.5 items-center cursor-pointer transition-colors ${isHover ? 'bg-gray-50' : ''} ${!isLast ? 'border-b border-slate-100' : ''}`}
+            >
+              <div>
+                <div className="text-[12px] text-slate-800 font-medium">{dateShort}</div>
+                <div className="text-[10px] text-slate-500 num">{dt.time}</div>
+              </div>
+
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${meta.tone}`}>
+                  <TI className="w-3.5 h-3.5"/>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[12.5px] font-medium text-slate-800 truncate">{t.label}</div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <Badge tone={t.status}>{t.status[0].toUpperCase() + t.status.slice(1)}</Badge>
+                    <span className="text-[10px] text-slate-400 font-mono truncate">{t.counterparty}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <div className={`text-[13px] font-semibold num ${t.dir==='IN' ? 'text-green-700' : 'text-slate-900'}`}>
+                  {t.dir==='IN' ? '+' : '−'}${fmtUSD(t.amount)}
+                </div>
+                <div className="text-[10px] text-slate-400 font-mono">USD</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="px-4 py-2.5 border-t border-slate-200 flex items-center justify-between text-[11px] bg-slate-50/40">
+        <span className="text-slate-500">{filtered.length} shown</span>
+        <button className="inline-flex items-center gap-1 text-indigo-700 font-medium hover:text-indigo-900 cursor-pointer">View all transactions <Icon.ChevronRight className="w-3 h-3"/></button>
+      </div>
+    </Card>
+  );
+};
+
+/* ============ Transactions Table (kept for /history, not used on dashboard now) ============ */
+const TypeMeta = {
+  topup:    { label: 'Top-up',    icon: Icon.TxBank, tone: 'text-emerald-700 bg-emerald-50' },
+  transfer: { label: 'Transfer',  icon: Icon.TxOut,  tone: 'text-indigo-700 bg-indigo-50' },
+  card:     { label: 'Card',      icon: Icon.TxCard, tone: 'text-violet-700 bg-violet-50' },
+  exchange: { label: 'Exchange',  icon: Icon.TxExch, tone: 'text-amber-700 bg-amber-50' },
+  fee:      { label: 'Fee',       icon: Icon.TxFee,  tone: 'text-slate-700 bg-slate-100' },
+};
+
+const TransactionsTable = () => {
+  const [filter, setFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [hoverRow, setHoverRow] = useState(null);
+
+  const filtered = TXNS.filter(t => {
+    if (filter !== 'all' && t.dir !== filter) return false;
+    if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+    return true;
+  });
+
+  return (
+    <Card className="col-span-12 p-0 overflow-hidden">
+      {/* Header row */}
+      <div className="px-5 py-4 flex items-center gap-3 border-b border-slate-200 flex-wrap">
+        <div>
+          <div className="text-[15px] font-semibold tracking-tight">Recent transactions</div>
+          <div className="text-[12px] text-slate-500 mt-0.5">Last {filtered.length} of {TXNS.length} · across all wallets</div>
+        </div>
+
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          {/* Direction filter */}
+          <div className="inline-flex h-8 bg-slate-50 border border-slate-200 rounded-lg p-0.5 text-[12px]">
+            {[['all','All'],['IN','Money in'],['OUT','Money out']].map(([k,l]) => (
+              <button key={k} onClick={()=>setFilter(k)} className={`px-2.5 h-full rounded-md font-medium transition-colors ${filter===k ? 'bg-white text-slate-800 border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}>{l}</button>
+            ))}
+          </div>
+
+          <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} className="h-8 px-2 pr-7 text-[12px] bg-white border border-slate-200 rounded-lg appearance-none cursor-pointer hover:border-slate-300 font-medium"
+                  style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%2364748b' stroke-width='1.5'%3E%3Cpath d='M3 4.5l3 3 3-3'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 6px center', backgroundSize:'12px' }}>
+            <option value="all">All statuses</option>
+            <option value="success">Success</option>
+            <option value="pending">Pending</option>
+            <option value="failed">Failed</option>
+          </select>
+
+          <Btn variant="outline" size="sm"><Icon.Download className="w-3.5 h-3.5"/>Export</Btn>
+          <Btn variant="primary" size="sm">View all</Btn>
+        </div>
+      </div>
+
+      {/* Column headers */}
+      <div className="grid grid-cols-[180px_2fr_1fr_120px_140px_36px] gap-4 px-5 py-2.5 border-b border-slate-200 bg-slate-50/60 text-[10px] uppercase tracking-wider text-slate-500 font-medium">
+        <div>Date &amp; time</div>
+        <div>Transaction</div>
+        <div>Counterparty</div>
+        <div>Status</div>
+        <div className="text-right">Amount</div>
+        <div/>
+      </div>
+
+      {/* Rows */}
+      <div>
+        {filtered.map((t, i) => {
+          const meta = TypeMeta[t.type];
+          const TI = meta.icon;
+          const dt = fmtTime(t.date);
+          const isLast = i === filtered.length - 1;
+          const isHover = hoverRow === t.id;
+          return (
+            <div
+              key={t.id}
+              onMouseEnter={() => setHoverRow(t.id)}
+              onMouseLeave={() => setHoverRow(null)}
+              className={`grid grid-cols-[180px_2fr_1fr_120px_140px_36px] gap-4 px-5 py-3 items-center cursor-pointer transition-colors ${isHover ? 'bg-slate-50' : ''} ${!isLast ? 'border-b border-slate-100' : ''}`}
+            >
+              <div>
+                <div className="text-[13px] text-slate-800 font-medium">{dt.date}</div>
+                <div className="text-[11px] text-slate-500 num">{dt.time}</div>
+              </div>
+
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-8 h-8 rounded-lg grid place-items-center shrink-0 ${meta.tone}`}>
+                  <TI className="w-4 h-4"/>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium text-slate-800 truncate flex items-center gap-1.5">
+                    {t.label}
+                    <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{meta.label}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-mono truncate">{t.id}</div>
+                </div>
+              </div>
+
+              <div className="text-[12px] text-slate-600 truncate font-mono">{t.counterparty}</div>
+
+              <div>
+                <Badge tone={t.status}>{t.status[0].toUpperCase() + t.status.slice(1)}</Badge>
+              </div>
+
+              <div className="text-right">
+                <div className={`text-[14px] font-semibold num ${t.dir==='IN' ? 'text-emerald-600' : 'text-slate-900'}`}>
+                  {t.dir==='IN' ? '+' : '−'}${fmtUSD(t.amount)}
+                </div>
+                <div className="text-[10px] text-slate-400 font-mono">USD</div>
+              </div>
+
+              <div className="text-slate-300">
+                <Icon.ChevronRight className={`w-4 h-4 transition-transform ${isHover ? 'text-slate-600 translate-x-0.5' : ''}`}/>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-between text-[12px] text-slate-500 bg-slate-50/40">
+        <div>Showing <span className="num text-slate-700 font-medium">{filtered.length}</span> of <span className="num">{TXNS.length}</span> transactions</div>
+        <div className="flex items-center gap-1">
+          <button className="h-7 w-7 grid place-items-center border border-slate-200 rounded-md hover:bg-white text-slate-400 hover:text-slate-700">‹</button>
+          <button className="h-7 w-7 grid place-items-center border border-slate-200 rounded-md bg-white text-slate-700 font-medium num">1</button>
+          <button className="h-7 w-7 grid place-items-center border border-slate-200 rounded-md hover:bg-white text-slate-500 num">2</button>
+          <button className="h-7 w-7 grid place-items-center border border-slate-200 rounded-md hover:bg-white text-slate-500 num">3</button>
+          <button className="h-7 w-7 grid place-items-center border border-slate-200 rounded-md hover:bg-white text-slate-500">›</button>
+        </div>
+      </div>
+    </Card>
+  );
+};
+
+/* ============ Dashboard page ============ */
+const Dashboard = ({ onNav }) => {
+  const [hidden, setHidden] = useState(false);
+  return (
+    <div className="p-6 space-y-5" data-screen-label="01 Dashboard">
+      {/* Greeting — perfectly vertically centered between title block and actions */}
+      <div className="flex items-center justify-between flex-wrap gap-x-4 gap-y-3">
+        <div className="min-w-0">
+          <h1 className="text-[32px] font-bold tracking-tight text-slate-900 leading-tight">Good afternoon, {USER.name.split(' ')[0].toLowerCase()}</h1>
+          <p className="text-[14px] text-slate-500 mt-1">Monday, May 25, 2026 · You're up <span className="text-emerald-600 font-medium num">+$77.50</span> in the last 7 days.</p>
+        </div>
+        <div className="flex items-center gap-2 self-center">
+          <Btn variant="secondary" size="md"><Icon.Filter className="w-3.5 h-3.5"/>Filter</Btn>
+          <Btn variant="secondary" size="md"><Icon.Download className="w-3.5 h-3.5"/>Export</Btn>
+          <Btn variant="primary" size="md"><Icon.Send className="w-3.5 h-3.5"/>New transfer</Btn>
+        </div>
+      </div>
+
+      {/* Hero row: Wallet (cols 1-8) + Quick Actions (cols 9-12) */}
+      <div className="grid grid-cols-12 gap-4">
+        <HeroWallet hidden={hidden} onToggleHide={() => setHidden(h => !h)}/>
+        <QuickActionsCard onNav={onNav}/>
+      </div>
+
+      {/* KPI row */}
+      <div className="grid grid-cols-12 gap-4">
+        {KPIS.map((k, i) => (
+          <div key={i} className="col-span-12 sm:col-span-6 lg:col-span-3"><KpiCard k={k}/></div>
+        ))}
+      </div>
+
+      {/* Cashflow line chart (left) + compact transactions panel (right) */}
+      <div className="grid grid-cols-12 gap-4">
+        <CashflowCard/>
+        <TxnPanel/>
+      </div>
+    </div>
+  );
+};
+
+/* ============ Stub pages for other routes ============ */
+const StubPage = ({ title, body }) => (
+  <div className="p-10">
+    <div className="max-w-2xl mx-auto text-center mt-16">
+      <div className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">Prototype stub</div>
+      <div className="text-[28px] font-semibold tracking-tight mt-2">{title}</div>
+      <div className="text-sm text-slate-500 mt-3">{body}</div>
+    </div>
+  </div>
+);
+
+/* ============ App ============ */
+const App = () => {
+  const [route, setRoute] = useState('/dashboard');
+  return (
+    <div className="min-h-screen flex" style={{ minWidth: 1200 }}>
+      <Sidebar route={route} onNav={setRoute}/>
+      <div className="flex-1 flex flex-col min-w-0">
+        <TopBar/>
+        <main className="flex-1 overflow-auto">
+          {route === '/dashboard' && <Dashboard onNav={setRoute}/>}
+          {route === '/wallets'   && <StubPage title="Wallets"   body="The Wallets list lives here — open Dashboard to see the marquee redesign."/>}
+          {route === '/send'      && <StubPage title="Send"      body="The Send wizard lives in its own prototype file."/>}
+          {route === '/top-up'    && <StubPage title="Top Up"    body="The Top Up wizard lives in its own prototype file."/>}
+          {route === '/exchange'  && <StubPage title="Exchange"  body="Currency exchange — coming soon in this prototype."/>}
+          {route === '/cards'     && <StubPage title="Cards"     body="Card management — coming soon in this prototype."/>}
+          {route === '/history'   && <StubPage title="History"   body="Use the transactions table on the Dashboard for now."/>}
+        </main>
+      </div>
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
