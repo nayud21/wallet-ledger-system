@@ -2,6 +2,7 @@ package com.walletledger.user;
 
 import com.walletledger.user.dto.CreateUserRequest;
 import com.walletledger.user.dto.UserResponse;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
@@ -13,6 +14,7 @@ import java.util.UUID;
 @Path("/api/v1/users")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
+@RolesAllowed("ADMIN")
 @RequiredArgsConstructor
 public class UserResource {
 

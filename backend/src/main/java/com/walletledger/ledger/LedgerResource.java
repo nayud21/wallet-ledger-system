@@ -4,6 +4,7 @@ import com.walletledger.ledger.dto.LedgerTransactionResponse;
 import com.walletledger.ledger.dto.ReversalRequest;
 import com.walletledger.shared.PageResponse;
 import io.quarkus.panache.common.Page;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -12,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 @Path("/api/v1/ledger")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
+@RolesAllowed("ADMIN")
 @RequiredArgsConstructor
 public class LedgerResource {
 

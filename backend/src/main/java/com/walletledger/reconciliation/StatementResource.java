@@ -6,6 +6,7 @@ import com.walletledger.reconciliation.dto.ReconciliationExceptionResponse;
 import com.walletledger.reconciliation.dto.ReconciliationMatchResponse;
 import com.walletledger.reconciliation.dto.ReconciliationRunResponse;
 import com.walletledger.reconciliation.dto.StatementLine;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Path("/api/v1/statements")
+@RolesAllowed("ADMIN")
 @RequiredArgsConstructor
 public class StatementResource {
 

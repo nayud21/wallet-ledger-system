@@ -1,10 +1,13 @@
 package com.walletledger;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.RestAssured;
+import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -59,6 +62,14 @@ class WalletTopUpTest {
             .setParameter(1, liabilityId)
             .setParameter(2, walletId)
             .executeUpdate();
+
+        RestAssured.requestSpecification = new RequestSpecBuilder()
+            .addHeader("Authorization", "Bearer " + TestAuth.user(userId)).build();
+    }
+
+    @AfterEach
+    void clearAuth() {
+        RestAssured.requestSpecification = null;
     }
 
     @Test

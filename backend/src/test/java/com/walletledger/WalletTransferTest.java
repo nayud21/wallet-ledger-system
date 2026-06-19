@@ -1,10 +1,13 @@
 package com.walletledger;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.RestAssured;
+import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -60,6 +63,14 @@ class WalletTransferTest {
                 "VALUES (?1, 'USD', 'test-xfer-b', 0.00, ?2) RETURNING id", UUID.class)
             .setParameter(1, userId).setParameter(2, liabilityB)
             .getSingleResult();
+
+        RestAssured.requestSpecification = new RequestSpecBuilder()
+            .addHeader("Authorization", "Bearer " + TestAuth.user(userId)).build();
+    }
+
+    @AfterEach
+    void clearAuth() {
+        RestAssured.requestSpecification = null;
     }
 
     @Test

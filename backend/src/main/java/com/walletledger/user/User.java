@@ -20,6 +20,18 @@ public class User extends PanacheEntityBase {
     @Column(nullable = false, unique = true, length = 255)
     public String email;
 
+    @Column(name = "password_hash")
+    public String passwordHash;
+
+    @Column(nullable = false, length = 32)
+    public String role = "USER";
+
+    @Column(nullable = false, length = 32)
+    public String status = "ACTIVE";
+
+    @Column(name = "last_login_at")
+    public Instant lastLoginAt;
+
     @Column(name = "created_at", nullable = false)
     public Instant createdAt = Instant.now();
 }

@@ -1,6 +1,7 @@
 package com.walletledger.wallet;
 
 import com.walletledger.audit.AuditLogService;
+import com.walletledger.auth.CurrentUser;
 import com.walletledger.idempotency.IdempotencyKeyRepository;
 import com.walletledger.ledger.*;
 import com.walletledger.payment.PaymentEventRepository;
@@ -12,6 +13,7 @@ import com.walletledger.wallet.event.WalletEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
+import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import java.math.BigDecimal;
@@ -32,6 +34,15 @@ public class WalletService {
     private final IdempotencyKeyRepository idempotencyKeyRepo;
     private final Event<WalletEvent> walletEvents;
     private final AuditLogService auditLogService;
+    private final CurrentUser currentUser;
+
+    /** BOLA guard: a non-admin caller may only act on wallets they own. */
+    public void assertOwnership(Wallet wallet) {
+        if (currentUser.isAdmin()) return;
+        if (!wallet.userId.equals(currentUser.id())) {
+            throw new ForbiddenException("Wallet does not belong to caller");
+        }
+    }
 
     @Transactional
     public WalletResponse createWallet(CreateWalletRequest req) {
@@ -52,7 +63,8 @@ public class WalletService {
         walletRepo.persist(wallet);
 
         auditLogService.log("wallet", wallet.id.toString(), "CREATE",
-            "{\"userId\":\"" + wallet.userId + "\",\"currency\":\"" + wallet.currency + "\"}");
+            "{\"userId\":\"" + wallet.userId + "\",\"currency\":\"" + wallet.currency + "\"}",
+            currentUser.principalName());
 
         return WalletResponse.from(wallet);
     }
@@ -66,10 +78,12 @@ public class WalletService {
         if (idempotencyKeyRepo.checkAndGuard(req.idempotencyKey(), hash)) {
             Wallet wallet = walletRepo.findByIdOptional(req.walletId())
                 .orElseThrow(() -> new NotFoundException("Wallet not found: " + req.walletId()));
+            assertOwnership(wallet);
             return WalletResponse.from(wallet);
         }
         Wallet wallet = walletRepo.findByIdForUpdate(req.walletId())
             .orElseThrow(() -> new NotFoundException("Wallet not found: " + req.walletId()));
+        assertOwnership(wallet);
 
         if (!"ACTIVE".equals(wallet.status)) {
             throw new WalletNotActiveException(wallet.id, wallet.status);
@@ -100,7 +114,8 @@ public class WalletService {
         walletEvents.fire(new WalletEvent(wallet.id, "CREDIT", req.amount(), wallet.currency, "TOP_UP"));
         auditLogService.log("wallet", wallet.id.toString(), "TOP_UP",
             "{\"amount\":\"" + req.amount().toPlainString() + "\",\"currency\":\"" + wallet.currency
-            + "\",\"ledgerTxId\":" + tx.id + "}");
+            + "\",\"ledgerTxId\":" + tx.id + "}",
+            currentUser.principalName());
         return WalletResponse.from(wallet);
     }
 
@@ -116,6 +131,7 @@ public class WalletService {
         if (idempotencyKeyRepo.checkAndGuard(req.idempotencyKey(), hash)) {
             Wallet from = walletRepo.findByIdOptional(req.fromWalletId())
                 .orElseThrow(() -> new NotFoundException("Source wallet not found"));
+            assertOwnership(from);
             Wallet to = walletRepo.findByIdOptional(req.toWalletId())
                 .orElseThrow(() -> new NotFoundException("Target wallet not found"));
             return new TransferResponse(WalletResponse.from(from), WalletResponse.from(to));
@@ -133,6 +149,8 @@ public class WalletService {
 
         Wallet from = req.fromWalletId().equals(firstId) ? first : second;
         Wallet to   = req.fromWalletId().equals(firstId) ? second : first;
+
+        assertOwnership(from);
 
         if (!"ACTIVE".equals(from.status)) throw new WalletNotActiveException(from.id, from.status);
         if (!"ACTIVE".equals(to.status)) throw new WalletNotActiveException(to.id, to.status);
@@ -171,10 +189,12 @@ public class WalletService {
         walletEvents.fire(new WalletEvent(to.id, "CREDIT", req.amount(), currency, "TRANSFER_IN"));
         auditLogService.log("wallet", from.id.toString(), "TRANSFER_OUT",
             "{\"toWalletId\":\"" + to.id + "\",\"amount\":\"" + req.amount().toPlainString()
-            + "\",\"currency\":\"" + currency + "\",\"ledgerTxId\":" + tx.id + "}");
+            + "\",\"currency\":\"" + currency + "\",\"ledgerTxId\":" + tx.id + "}",
+            currentUser.principalName());
         auditLogService.log("wallet", to.id.toString(), "TRANSFER_IN",
             "{\"fromWalletId\":\"" + from.id + "\",\"amount\":\"" + req.amount().toPlainString()
-            + "\",\"currency\":\"" + currency + "\",\"ledgerTxId\":" + tx.id + "}");
+            + "\",\"currency\":\"" + currency + "\",\"ledgerTxId\":" + tx.id + "}",
+            currentUser.principalName());
 
         return new TransferResponse(WalletResponse.from(from), WalletResponse.from(to));
     }
@@ -199,7 +219,8 @@ public class WalletService {
         wallet.status = "FROZEN";
         wallet.updatedAt = Instant.now();
         auditLogService.log("wallet", id.toString(), "FREEZE",
-            "{\"previousStatus\":\"" + previous + "\",\"newStatus\":\"FROZEN\"}");
+            "{\"previousStatus\":\"" + previous + "\",\"newStatus\":\"FROZEN\"}",
+            currentUser.principalName());
         return WalletResponse.from(wallet);
     }
 
@@ -211,7 +232,8 @@ public class WalletService {
         wallet.status = "ACTIVE";
         wallet.updatedAt = Instant.now();
         auditLogService.log("wallet", id.toString(), "UNFREEZE",
-            "{\"previousStatus\":\"" + previous + "\",\"newStatus\":\"ACTIVE\"}");
+            "{\"previousStatus\":\"" + previous + "\",\"newStatus\":\"ACTIVE\"}",
+            currentUser.principalName());
         return WalletResponse.from(wallet);
     }
 

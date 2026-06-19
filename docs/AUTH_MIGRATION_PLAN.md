@@ -1,3 +1,8 @@
+> ⚠️ **SUPERSEDED (2026-06-18).** Doc này viết khi codebase còn cũ và có chi tiết sai:
+> migration `V9` đã bị reconciliation dùng (next là **V10**), role nên là `USER/OPERATOR/ADMIN`
+> (uppercase), private key **không** đặt ở `META-INF/resources/`. Plan backend chính thức:
+> [`plans/PHASE_E_auth_backend.md`](plans/PHASE_E_auth_backend.md). Giữ doc này làm tham khảo lịch sử.
+
 # Plan: Migrate Authentication vào hệ thống
 
 **Auth chosen:** JWT (SmallRye JWT)
