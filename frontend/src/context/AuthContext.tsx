@@ -4,37 +4,57 @@ interface AuthUser {
   id: string;
   username: string;
   email: string;
+  role: string;
 }
 
 interface AuthContextValue {
   user: AuthUser | null;
-  login: (user: AuthUser) => void;
+  login: (token: string) => void;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const STORAGE_KEY = 'mywallet_user';
+export const TOKEN_KEY = 'wl_token';
 
-function loadStoredUser(): AuthUser | null {
+function decodeJwt(token: string): AuthUser | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const payload = token.split('.')[1];
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    const claims = JSON.parse(json);
+    const groups: string[] = claims.groups ?? [];
+    return {
+      id: claims.sub,
+      username: claims.upn ?? claims.preferred_username ?? '',
+      email: claims.email ?? '',
+      role: groups[0] ?? 'USER',
+    };
   } catch {
     return null;
   }
 }
 
+function loadStoredUser(): AuthUser | null {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) return null;
+  const user = decodeJwt(token);
+  if (!user) {
+    localStorage.removeItem(TOKEN_KEY);
+    return null;
+  }
+  return user;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(loadStoredUser);
 
-  function login(u: AuthUser) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(u));
-    setUser(u);
+  function login(token: string) {
+    localStorage.setItem(TOKEN_KEY, token);
+    setUser(decodeJwt(token));
   }
 
   function logout() {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(TOKEN_KEY);
     setUser(null);
   }
 

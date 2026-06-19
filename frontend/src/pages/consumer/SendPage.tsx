@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import { useWallets, useTransfer, useRecentRecipients } from '../../hooks/useWallets';
+import { useMyWallets, useTransfer, useRecentRecipients } from '../../hooks/useWallets';
 import ConsumerLayout from '../../components/consumer/ConsumerLayout';
 import { fmtMoney } from '../../utils/format';
 import { useToast } from '../../context/ToastContext';
@@ -134,13 +133,12 @@ function SummaryRow({ label, children, emphasize }: { label: string; children: R
 }
 
 export default function SendPage() {
-  const { user } = useAuth();
   const navigate = useNavigate();
-  const { data: wallets } = useWallets(user!.id);
+  const { data: wallets } = useMyWallets();
   const transfer = useTransfer();
   const toast = useToast();
 
-  const { data: recipients = [] } = useRecentRecipients(user!.id);
+  const { data: recipients = [] } = useRecentRecipients();
 
   const [step, setStep] = useState(0);
   const [toWalletId, setToWalletId] = useState('');

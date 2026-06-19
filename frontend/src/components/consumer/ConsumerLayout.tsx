@@ -1,7 +1,7 @@
 import { ReactNode, useState, useEffect, useRef } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { useWallets } from '../../hooks/useWallets';
+import { useMyWallets } from '../../hooks/useWallets';
 import { useWalletStream } from '../../hooks/useWalletStream';
 import { Icon } from './ui/icons';
 
@@ -10,8 +10,7 @@ interface ConsumerLayoutProps {
 }
 
 function WalletStreamListener() {
-  const { user } = useAuth();
-  const { data: wallets } = useWallets(user!.id);
+  const { data: wallets } = useMyWallets();
   useWalletStream(wallets?.map((w) => w.id) ?? []);
   return null;
 }

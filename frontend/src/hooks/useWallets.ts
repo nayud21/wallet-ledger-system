@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchWallets,
+  fetchMyWallets,
+  fetchMyTransactions,
   fetchWallet,
   fetchWalletEntries,
   fetchRecentRecipients,
@@ -17,6 +19,21 @@ export function useWallets(userId?: string, status?: string) {
   return useQuery({
     queryKey: ['wallets', userId, status],
     queryFn: () => fetchWallets(userId, status),
+  });
+}
+
+// Consumer-facing: the caller's own wallets, scoped server-side by JWT.
+export function useMyWallets() {
+  return useQuery({
+    queryKey: ['myWallets'],
+    queryFn: fetchMyWallets,
+  });
+}
+
+export function useMyTransactions(page = 0, size = 20) {
+  return useQuery({
+    queryKey: ['myTransactions', page, size],
+    queryFn: () => fetchMyTransactions(page, size),
   });
 }
 
@@ -40,7 +57,10 @@ export function useCreateWallet() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: CreateWalletRequest) => createWallet(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['wallets'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wallets'] });
+      qc.invalidateQueries({ queryKey: ['myWallets'] });
+    },
   });
 }
 
@@ -48,7 +68,11 @@ export function useTopUp() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: TopUpRequest) => topUpWallet(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['wallets'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wallets'] });
+      qc.invalidateQueries({ queryKey: ['myWallets'] });
+      qc.invalidateQueries({ queryKey: ['myTransactions'] });
+    },
   });
 }
 
@@ -58,16 +82,17 @@ export function useTransfer() {
     mutationFn: (req: TransferRequest) => transferWallet(req),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['wallets'] });
+      qc.invalidateQueries({ queryKey: ['myWallets'] });
+      qc.invalidateQueries({ queryKey: ['myTransactions'] });
       qc.invalidateQueries({ queryKey: ['recentRecipients'] });
     },
   });
 }
 
-export function useRecentRecipients(userId: string) {
+export function useRecentRecipients() {
   return useQuery({
-    queryKey: ['recentRecipients', userId],
-    queryFn: () => fetchRecentRecipients(userId),
-    enabled: !!userId,
+    queryKey: ['recentRecipients'],
+    queryFn: () => fetchRecentRecipients(),
   });
 }
 

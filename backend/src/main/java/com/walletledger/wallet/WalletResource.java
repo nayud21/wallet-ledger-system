@@ -55,7 +55,7 @@ public class WalletResource {
     }
 
     @POST
-    @RolesAllowed("ADMIN")
+    @RolesAllowed({"USER", "ADMIN"})
     public Response create(@Valid CreateWalletRequest req) {
         WalletResponse result = walletService.createWallet(req);
         return Response.status(Response.Status.CREATED).entity(result).build();

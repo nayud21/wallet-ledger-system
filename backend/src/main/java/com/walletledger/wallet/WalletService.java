@@ -46,8 +46,10 @@ public class WalletService {
 
     @Transactional
     public WalletResponse createWallet(CreateWalletRequest req) {
-        if (!userRepo.findByIdOptional(req.userId()).isPresent()) {
-            throw new NotFoundException("User not found: " + req.userId());
+        // A non-admin may only create wallets for themselves; admins may create for any user.
+        UUID ownerId = currentUser.isAdmin() ? req.userId() : currentUser.id();
+        if (!userRepo.findByIdOptional(ownerId).isPresent()) {
+            throw new NotFoundException("User not found: " + ownerId);
         }
 
         LedgerAccount account = new LedgerAccount();
@@ -56,7 +58,7 @@ public class WalletService {
         ledgerAccountRepo.persist(account);
 
         Wallet wallet = new Wallet();
-        wallet.userId = req.userId();
+        wallet.userId = ownerId;
         wallet.currency = req.currency().toUpperCase();
         wallet.externalId = req.externalId();
         wallet.ledgerAccountId = account.id;

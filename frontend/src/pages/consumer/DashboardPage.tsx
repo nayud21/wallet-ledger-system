@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { useWallets, useWalletEntries } from '../../hooks/useWallets';
+import { useMyWallets, useWalletEntries } from '../../hooks/useWallets';
 import ConsumerLayout from '../../components/consumer/ConsumerLayout';
 import HeroWallet from '../../components/consumer/HeroWallet';
 import QuickActionsCard from '../../components/consumer/QuickActionsCard';
@@ -14,7 +14,7 @@ import { fmtMoney, greeting } from '../../utils/format';
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { data: wallets, isLoading: walletsLoading } = useWallets(user!.id);
+  const { data: wallets, isLoading: walletsLoading } = useMyWallets();
   const primaryWallet = wallets?.[0];
   const { data: entries, isLoading: entriesLoading } = useWalletEntries(primaryWallet?.id ?? null);
 
