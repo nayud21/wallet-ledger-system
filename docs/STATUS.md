@@ -1,6 +1,6 @@
 # Project Status — Wallet Ledger System
 
-> Last updated: 2026-06-18
+> Last updated: 2026-06-19
 
 ## Tổng quan phase
 
@@ -9,9 +9,12 @@
 | **A** | Core ledger: top-up / transfer / reversal | ✅ Hoàn thành |
 | **B** | Webhook inbox + audit log + idempotency hardening | ✅ Hoàn thành |
 | **C** | Reconciliation engine & jobs | ✅ Hoàn thành |
-| **E** | JWT auth + user-facing app | ⏳ Chưa bắt đầu (kế tiếp) — xem [`docs/plans/PHASE_E_user_facing.md`](plans/PHASE_E_user_facing.md) |
+| **E** | JWT auth + user-facing app | ✅ Hoàn thành (branch `feat/phase-e-auth`) |
 
-> Hiện tại auth vẫn dùng `X-User-Id` header (trust blindly) cho BOLA check — sẽ thay bằng JWT trong Phase E.
+> Auth đã dùng **JWT (SmallRye, RSA self-issued)** với 2 role `USER`/`ADMIN`. BOLA enforce ở service layer
+> (`WalletService.assertOwnership`), `@RolesAllowed` trên mọi resource, webhook giữ `@PermitAll`.
+> Header `X-User-Id` cũ đã bị loại bỏ hoàn toàn. Chi tiết: [`docs/plans/PHASE_E_auth_backend.md`](plans/PHASE_E_auth_backend.md).
+> Bootstrap admin (dev): `admin@walletledger.local` / `Admin@12345`.
 
 ---
 

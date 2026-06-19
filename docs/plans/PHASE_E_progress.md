@@ -1,7 +1,12 @@
 # Phase E — Tiến độ (handoff)
 
-> Cập nhật: 2026-06-18 cuối ngày. Branch: **`feat/phase-e-auth`** (chưa commit, chưa push).
+> Cập nhật: 2026-06-19. Branch: **`feat/phase-e-auth`** — S0–S7 ĐÃ XONG & commit (chưa push, chưa mở PR).
 > Plan: [`PHASE_E_auth_backend.md`](PHASE_E_auth_backend.md) + runbook [`PHASE_E_execution_runbook.md`](PHASE_E_execution_runbook.md).
+>
+> **Trạng thái: HOÀN THÀNH.** Backend `./mvnw test` 44/44; frontend `tsc --noEmit` + `vite build` sạch.
+> Commits: `a648768` (backend S0–S5), `5ab73c3` (frontend S6), + commit docs S7.
+> Việc còn lại tùy chọn: push branch + mở PR; smoke test e2e thủ công (boot full stack);
+> verify runtime `curl -i /privateKey.pem` → 404 (đã đảm bảo về cấu trúc: key ở classpath root).
 
 ## Đã xong (code)
 

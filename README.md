@@ -36,6 +36,14 @@ wallet-ledger-system/
 # 1. Start PostgreSQL
 docker compose up -d
 
+# 1b. Generate the JWT signing key pair (once). The private key is gitignored;
+#     the public key is committed. Keys live at the classpath root — NOT under
+#     META-INF/resources, which Quarkus serves over HTTP.
+cd backend/src/main/resources
+openssl genrsa -out privateKey.pem 2048
+openssl rsa -in privateKey.pem -pubout -out publicKey.pem
+cd -
+
 # 2. Backend (dev mode, hot reload)
 cd backend
 ./mvnw quarkus:dev
@@ -49,6 +57,29 @@ npm install
 npm run dev
 # → http://localhost:5173 (proxies /api → :8080)
 ```
+
+## Auth
+
+JWT (SmallRye, RSA self-issued). Two roles: `USER`, `ADMIN`.
+
+```bash
+# Register (returns a JWT) — role USER
+curl -sX POST localhost:8080/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","email":"alice@example.com","password":"secret12345"}'
+
+# Login
+curl -sX POST localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"usernameOrEmail":"alice@example.com","password":"secret12345"}'
+
+# Authenticated call
+curl localhost:8080/api/v1/wallets/me -H "Authorization: Bearer <accessToken>"
+```
+
+- Bootstrap admin (dev, seeded in `V10`): `admin@walletledger.local` / `Admin@12345`.
+- Users may read/mutate only their own wallets (BOLA enforced in the service layer); admins bypass.
+- The webhook endpoint stays unauthenticated (HMAC-verified), never gate it with `@RolesAllowed`.
 
 ## Tests
 

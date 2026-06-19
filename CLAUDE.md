@@ -24,6 +24,7 @@ PostgreSQL runs via `docker-compose up -d` from the repo root.
 - **Idempotency:** every mutating endpoint accepts an `idempotencyKey`. Persist with UNIQUE constraint. Duplicate calls return the original result, not a new mutation.
 - **Concurrency:** wallet mutations use `SELECT ... FOR UPDATE`. For transfers, lock wallets in ascending ID order to prevent deadlock.
 - **Security (OWASP):** validate with `@Valid` at REST boundaries; enforce wallet ownership (no BOLA); never log webhook bodies or secrets; only parameterized queries.
+- **Auth (Phase E):** every endpoint carries `@RolesAllowed` (roles `USER`/`ADMIN`) or an explicit `@PermitAll` (auth + webhook only). Identity comes from the JWT (`CurrentUser`), never from request params/headers — never reintroduce `X-User-Id`. Ownership (BOLA) is checked in the service layer (`WalletService.assertOwnership`), admins bypass. Webhook stays `@PermitAll` (verify HMAC). Never commit `privateKey.pem`; keys live at classpath root, not under `META-INF/resources/` (that path is web-served).
 
 ### Frontend rules
 - **Laptop-first density.** Use compact tables, side-by-side panels for reconciliation screens, `text-sm` defaults. Don't waste horizontal space.
