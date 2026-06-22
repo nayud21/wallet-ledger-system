@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>18 · Backend Architecture — Wallet Ledger</title>
+<style>
+  :root { --ink:#1e293b; --muted:#64748b; --line:#e2e8f0; --accent:#4f46e5; --bg:#f8fafc;
+          --code-bg:#0f172a; --code-ink:#e2e8f0; --warn:#b45309; --warn-bg:#fffbeb; --ok:#047857; --ok-bg:#ecfdf5; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:880px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-size:26px; line-height:1.25; margin:0 0 4px; }
+  h2 { font-size:19px; margin:34px 0 10px; padding-top:14px; border-top:1px solid var(--line); }
+  h3 { font-size:15px; margin:20px 0 6px; color:var(--accent); }
+  p, li { color:#334155; }
+  code { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:13px; background:#eef2ff; color:#3730a3; padding:1px 5px; border-radius:4px; }
+  pre { background:var(--code-bg); color:var(--code-ink); padding:14px 16px; border-radius:8px; overflow-x:auto; font-size:12.5px; line-height:1.55; }
+  pre code { background:none; color:inherit; padding:0; }
+  .lead { color:var(--muted); font-size:15px; margin-top:0; }
+  .tag { display:inline-block; font-size:11px; font-weight:600; color:var(--accent); background:#eef2ff; border-radius:999px; padding:2px 10px; margin-bottom:14px; }
+  .box { border-radius:8px; padding:12px 16px; margin:14px 0; border:1px solid; }
+  .why { background:#f5f3ff; border-color:#ddd6fe; }
+  .warn { background:var(--warn-bg); border-color:#fde68a; }
+  .warn b { color:var(--warn); }
+  .ok { background:var(--ok-bg); border-color:#a7f3d0; }
+  .ok b { color:var(--ok); }
+  .trade { background:#fff7ed; border-color:#fed7aa; }
+  table { border-collapse:collapse; width:100%; margin:14px 0; font-size:13.5px; }
+  th, td { border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top; }
+  th { background:#f1f5f9; }
+  .crumbs { font-size:12.5px; color:var(--muted); margin-bottom:18px; }
+  .crumbs a { color:var(--accent); text-decoration:none; }
+  .diagram { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px; overflow-x:auto; }
+  .diagram pre { background:none; color:var(--ink); font-size:12px; }
+  footer { margin-top:40px; padding-top:14px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <div class="crumbs"><a href="README.md">learning-notes</a> / 18 · Backend Architecture</div>
+  <span class="tag">Architecture · Backend</span>
+  <h1>Backend Architecture — Quarkus Wallet Ledger</h1>
+  <p class="lead">A map of <em>how the backend is structured and why</em>. Read this to understand the shape of the codebase
+  before diving into any single feature note (01–17). Every concept below is actually applied in this repo — the file paths are real.</p>
+
+  <h2>1. The stack &amp; why each piece</h2>
+  <table>
+    <tr><th>Layer</th><th>Choice</th><th>Why this, trade-off</th></tr>
+    <tr><td>Runtime</td><td>Quarkus 3.15 (Java 21)</td><td>Fast startup, CDI built in, first-class native build. Trade-off: smaller ecosystem than Spring, fewer Stack Overflow answers.</td></tr>
+    <tr><td>Persistence</td><td>Hibernate ORM + Panache (active-record)</td><td>Less boilerplate than raw JPA repositories. Trade-off: active-record blurs entity/DAO line — we keep explicit <code>*Repository</code> classes to stay testable.</td></tr>
+    <tr><td>Schema</td><td>Flyway versioned migrations</td><td>Schema is code, reviewable & reproducible. Hibernate runs in <code>validate</code> mode only. Trade-off: every change needs a new <code>V{n}</code> file — see <a href="07_flyway_schema_migrations.md">note 07</a>.</td></tr>
+    <tr><td>DB</td><td>PostgreSQL 16</td><td><code>NUMERIC(19,4)</code> exact money, JSONB, row locks. Trade-off: heavier than SQLite for a demo, but the locking semantics are the whole point.</td></tr>
+    <tr><td>API</td><td>JAX-RS (RESTEasy Reactive)</td><td>Annotation-driven, integrates with Bean Validation & SmallRye JWT. Trade-off: reactive types (<code>Multi</code>) have IO-thread rules you must respect — see <a href="11_server_sent_events.md">note 11</a>.</td></tr>
+  </table>
+
+  <h2>2. Package-by-feature, layered inside</h2>
+  <p>Top level is split <b>by business capability</b>, not by technical type. There is no global <code>controllers/</code> or <code>services/</code> folder.</p>
+  <div class="diagram"><pre>com.walletledger
+├── wallet/          ← Wallet aggregate: Resource, Service, Repository, Entity, dto/, event/
+├── ledger/          ← Double-entry: transactions, entries, accounts
+├── payment/         ← Webhook inbox + async processor
+├── reconciliation/  ← Statement matching engine
+├── auth/            ← JWT issue/verify, password hashing, rate limiting
+├── user/            ← User entity + admin user mgmt
+├── idempotency/     ← Dedup keys table
+├── audit/           ← Append-only audit log
+└── shared/          ← error/ (RFC7807), health/, util/, exception/, PageResponse</pre></div>
+  <div class="box why"><b>Why package-by-feature?</b> Everything you need to change one capability lives in one folder — high cohesion,
+  low coupling. A new dev reads <code>wallet/</code> top-to-bottom and understands wallets. <b>Trade-off:</b> shared concerns
+  (errors, paging) need a deliberate <code>shared/</code> package, and you must resist dumping unrelated things there.</p></div>
+
+  <h3>The layering inside each feature</h3>
+  <div class="diagram"><pre>HTTP  →  Resource (JAX-RS)      validation, @RolesAllowed, maps DTO ⇄ domain
+            │
+            ▼
+         Service                 business rules, transactions, locking, invariants
+            │
+            ▼
+         Repository (Panache)    queries, SELECT ... FOR UPDATE
+            │
+            ▼
+         Entity                  maps to a table; money = BigDecimal</pre></div>
+  <div class="box why"><b>Why a Resource that does almost nothing?</b> The Resource is a thin boundary: parse, validate, delegate, serialize.
+  All decisions live in the Service so they're unit-testable without HTTP. <b>Trade-off:</b> feels like "just passing through" for simple
+  endpoints — accepted, because the consistency pays off the moment an endpoint grows a rule.</p></div>
+
+  <h2>3. Dependency injection — constructor only</h2>
+  <pre><code>@ApplicationScoped
+@RequiredArgsConstructor          // Lombok generates the constructor
+public class WalletService {
+    private final WalletRepository walletRepo;
+    private final LedgerService ledgerService;
+    private final AuditLogService auditLog;
+    // ...
+}</code></pre>
+  <div class="box why"><b>Why <code>private final</code> + constructor, never <code>@Inject</code> on fields?</b>
+  Fields stay immutable, the class is constructable in a plain unit test (just <code>new WalletService(mockRepo, ...)</code>),
+  and missing dependencies fail at compile/startup, not at runtime NPE. <b>Trade-off:</b> long constructors when a class has many deps —
+  which is actually a useful smell telling you to split the class. (Project rule — see <a href="README.md">memory: no field injection</a>.)</p></div>
+
+  <h2>4. The request lifecycle (the spine of the system)</h2>
+  <p>This is the single most important diagram. Every mutating wallet request flows through these gates, in order:</p>
+  <div class="diagram"><pre>POST /api/v1/wallets/transfer  (Bearer JWT, idempotencyKey in body)
+  │
+  1. JWT verify ............ signature + exp checked by SmallRye      (note 16)
+  2. @RolesAllowed ......... is caller a USER/ADMIN?  (RBAC)          (note 16)
+  3. @Valid DTO ............ amount > 0, currency present, ...        (Bean Validation)
+  4. assertOwnership() ..... does caller OWN this wallet? (BOLA)      (note 05/16)
+  5. idempotency lookup .... seen this key before? → replay result   (note 02/15)
+  6. SELECT ... FOR UPDATE . lock wallets, ASCENDING id order         (note 03)
+  7. balance/state checks .. sufficient funds? wallet active?
+  8. BigDecimal math ....... debit src, credit dst                   (note 08)
+  9. ledger entries ........ DEBIT + CREDIT, sum = 0, append-only    (note 01)
+ 10. commit + audit log .... + publish WalletEvent → SSE             (note 09/11)
+  │
+  └─ any exception → GlobalExceptionMapper → RFC 7807 problem+json   (note 04)</pre></div>
+  <div class="box ok"><b>Mental model:</b> auth → validate → authorize-object → dedup → lock → check → mutate → record.
+  If you can recite this order, you understand the backend.</div>
+
+  <h2>5. The load-bearing invariants</h2>
+  <table>
+    <tr><th>Invariant</th><th>Enforced where</th><th>Why it matters</th></tr>
+    <tr><td>Entries sum to zero per currency</td><td>Service assert (DB CHECK planned)</td><td>Money is never created/destroyed — the core of double-entry.</td></tr>
+    <tr><td>Ledger entries are append-only</td><td>Convention + no UPDATE/DELETE code</td><td>Audit trail integrity. Reversals = new mirrored transaction, never edits.</td></tr>
+    <tr><td>Every amount has a currency</td><td>Entity columns paired</td><td>No silent cross-currency addition.</td></tr>
+    <tr><td>Mutations are idempotent</td><td><code>idempotency_keys</code> UNIQUE</td><td>Network retries don't double-charge.</td></tr>
+    <tr><td>Identity comes from JWT</td><td><code>CurrentUser</code> wraps <code>jwt.getSubject()</code></td><td>Client can't claim to be someone else (no <code>X-User-Id</code>).</td></tr>
+  </table>
+
+  <h2>6. Cross-aggregate references: plain IDs, not <code>@ManyToOne</code></h2>
+  <pre><code>// Wallet does NOT hold a User object — just the id
+public UUID userId;        // not  @ManyToOne User user;</code></pre>
+  <div class="box why"><b>Why store a raw <code>UUID</code> instead of an object graph?</b> It keeps aggregate boundaries crisp (DDD),
+  avoids accidental lazy-loading cascades and N+1 queries, and lets each aggregate be loaded/locked independently.
+  <b>Trade-off:</b> you lose convenient navigation (<code>wallet.getUser().getEmail()</code>) and must do explicit lookups —
+  a deliberate cost. See <a href="13_ddd_aggregate_boundaries.md">note 13</a>.</p></div>
+
+  <h2>7. Async &amp; eventing</h2>
+  <ul>
+    <li><b>Webhook inbox</b> (<code>payment/</code>): the webhook endpoint only <em>stores</em> the raw event in a table, returns 200 fast; a <code>@Scheduled</code> processor handles it later. Decouples ingestion from processing, survives restarts. (<a href="09_webhook_inbox_pattern.md">note 09</a>)</li>
+    <li><b>SSE wallet stream</b> (<code>wallet/event/</code>): a CDI <code>AFTER_SUCCESS</code> observer publishes a <code>WalletEvent</code> to subscribers over Server-Sent Events so the UI updates live. (<a href="11_server_sent_events.md">note 11</a>)</li>
+  </ul>
+  <div class="box trade"><b>Trade-off (inbox pattern):</b> eventual consistency — the balance reflecting an external payment lags by one
+  scheduler tick. Accepted because it buys durability and a fast webhook response (the provider won't retry-storm you).</div>
+
+  <h2>8. Errors: typed exceptions → one mapper</h2>
+  <pre><code>throw new InsufficientBalanceException(currency, available, requested);  // → HTTP 422
+throw new IdempotencyConflictException(key);                            // → HTTP 409
+// GlobalExceptionMapper turns each into application/problem+json (RFC 7807)</code></pre>
+  <div class="box why"><b>Why typed exceptions + a central mapper?</b> Services throw meaningful domain errors and stay HTTP-agnostic;
+  the mapper owns the wire format in one place. <b>Trade-off:</b> one class per error type — verbose, but each carries exactly the
+  data the client needs. See <a href="04_rfc7807_problem_details.md">note 04</a>.</p></div>
+
+  <h2>9. Where to go next</h2>
+  <p>Each gate in §4 has a deep-dive note. Suggested reading order for a backend learner:
+  <a href="01_double_entry_bookkeeping.md">01</a> →
+  <a href="08_money_in_code.md">08</a> →
+  <a href="03_pessimistic_locking_and_deadlock_prevention.md">03</a> →
+  <a href="02_idempotency.md">02</a> →
+  <a href="16_jwt_auth.html">16</a> →
+  <a href="04_rfc7807_problem_details.md">04</a> →
+  <a href="13_ddd_aggregate_boundaries.md">13</a>.</p>
+
+  <footer>Wallet Ledger System · backend architecture overview · companion to feature notes 01–17.</footer>
+</main>
+</body>
+</html>

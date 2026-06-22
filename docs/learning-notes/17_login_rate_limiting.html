@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>17 · Login Rate Limiting — Wallet Ledger</title>
+<style>
+  :root { --ink:#1e293b; --muted:#64748b; --line:#e2e8f0; --accent:#4f46e5; --bg:#f8fafc;
+          --code-bg:#0f172a; --code-ink:#e2e8f0; --warn:#b45309; --warn-bg:#fffbeb; --ok:#047857; --ok-bg:#ecfdf5; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-size:26px; line-height:1.25; margin:0 0 4px; }
+  h2 { font-size:19px; margin:34px 0 10px; padding-top:14px; border-top:1px solid var(--line); }
+  h3 { font-size:15px; margin:20px 0 6px; color:var(--accent); }
+  p, li { color:#334155; }
+  code { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:13px; background:#eef2ff; color:#3730a3; padding:1px 5px; border-radius:4px; }
+  pre { background:var(--code-bg); color:var(--code-ink); padding:14px 16px; border-radius:8px; overflow-x:auto; font-size:12.5px; line-height:1.55; }
+  pre code { background:none; color:inherit; padding:0; }
+  .lead { color:var(--muted); font-size:15px; margin-top:0; }
+  .tag { display:inline-block; font-size:11px; font-weight:600; color:var(--accent); background:#eef2ff; border-radius:999px; padding:2px 10px; margin-bottom:14px; }
+  .box { border-radius:8px; padding:12px 16px; margin:14px 0; border:1px solid; }
+  .why { background:#f5f3ff; border-color:#ddd6fe; }
+  .warn { background:var(--warn-bg); border-color:#fde68a; }
+  .warn b { color:var(--warn); }
+  .ok { background:var(--ok-bg); border-color:#a7f3d0; }
+  .ok b { color:var(--ok); }
+  table { border-collapse:collapse; width:100%; margin:14px 0; font-size:13.5px; }
+  th, td { border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top; }
+  th { background:#f1f5f9; }
+  .crumbs { font-size:12.5px; color:var(--muted); margin-bottom:18px; }
+  .crumbs a { color:var(--accent); text-decoration:none; }
+  footer { margin-top:40px; padding-top:14px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <div class="crumbs"><a href="README.md">learning-notes</a> / 17 · Login Rate Limiting</div>
+  <span class="tag">Phase E · Security</span>
+  <h1>Login Rate Limiting</h1>
+  <p class="lead">Blocking password brute-force by capping how many login attempts are allowed per time window. This note explains the
+  in-memory fixed-window algorithm the project uses, the design decisions behind it, and why it's an MVP (not yet production-grade).</p>
+
+  <h2>1. The problem: brute-force</h2>
+  <p>The <code>/auth/login</code> endpoint accepts a password. With no limit, an attacker can fire thousands of requests per second to guess it.
+  bcrypt cost 12 makes each verification slow (~tens of ms) — that's one layer of defense, but <b>not enough</b>: an attacker can still try in parallel.
+  Rate limiting adds a second layer: <em>cap the number of attempts per unit of time.</em></p>
+
+  <h2>2. The algorithm: fixed-window counter per IP</h2>
+  <pre><code>// LoginRateLimiter — in-memory, @ApplicationScoped
+private record Window(long startEpochSec, int count) {}
+private final ConcurrentHashMap&lt;String, Window&gt; attempts = new ConcurrentHashMap&lt;&gt;();
+
+public void check(String ip) {
+    long now = Instant.now().getEpochSecond();
+    Window updated = attempts.compute(ip, (k, w) -&gt; {
+        if (w == null || now - w.startEpochSec() &gt;= 60)   // new window every 60s
+            return new Window(now, 1);
+        return new Window(w.startEpochSec(), w.count() + 1);
+    });
+    if (updated.count() &gt; maxAttempts)                      // default 10
+        throw new RateLimitedException("Too many login attempts.");
+}
+
+public void reset(String ip) { attempts.remove(ip); }      // call on SUCCESSFUL login</code></pre>
+  <p>The idea: for each IP, count attempts within a 60-second "window". More than 10 → throw <code>RateLimitedException</code> → mapped to <b>429</b>.</p>
+
+  <h3>Why "fixed window"?</h3>
+  <p>There are many algorithms (token bucket, sliding-window log, leaky bucket…). Fixed-window is the <b>simplest</b>: one timestamp + one counter.
+  Its weakness is the "window-edge burst" (10 attempts at second 59 + 10 at second 61 = 20 in 2 seconds). For <em>login</em>, that imprecision is acceptable.</p>
+
+  <h2>3. Three decisions worth remembering</h2>
+
+  <h3>① Limit by IP, NOT by username</h3>
+  <div class="box warn"><b>Why it matters:</b> if you rate-limit by username, an attacker only needs to fire 10 bad attempts at <em>someone else's</em>
+  account to <b>lock them out</b> (account-lockout DoS). Worse, a username getting locked quickly also reveals that the username exists.
+  → Limit by IP: the attacker throttles only themselves, and can't harm real users.</p></div>
+
+  <h3>② Reset the counter on successful login</h3>
+  <p>A real user mistypes a few times then gets it right — they shouldn't keep being penalized. <code>reset(ip)</code> clears the counter the moment login succeeds.</p>
+
+  <h3>③ Return 429 via a dedicated exception</h3>
+  <p><code>RateLimitedException</code> is mapped to <b>429 Too Many Requests</b> in <code>GlobalExceptionMapper</code>, keeping the
+  <code>application/problem+json</code> format consistent with every other error (RFC 7807 — see note 04).</p>
+
+  <h2>4. How to get the client IP (behind a proxy)?</h2>
+  <pre><code>// AuthResource.login
+String ip = clientIp(xForwardedFor, request);   // prefer X-Forwarded-For
+rateLimiter.check(ip);
+TokenResponse token = authService.login(req);
+rateLimiter.reset(ip);                            // only reached if login succeeds</code></pre>
+  <div class="box warn"><b>Production note:</b> <code>X-Forwarded-For</code> is client-supplied, so it can be spoofed. Behind a real reverse
+  proxy/load balancer, trust <em>the IP your proxy records</em>, not the whole client-supplied chain. Configure trusted proxies before relying on this header.</p></div>
+
+  <h2>5. Why in-memory — and its limits</h2>
+  <table>
+    <tr><th>Property</th><th>In-memory (current)</th><th>Redis (future)</th></tr>
+    <tr><td>Shared across instances</td><td>❌ each instance counts alone</td><td>✅ one shared counter</td></tr>
+    <tr><td>Survives restart</td><td>❌ lost entirely</td><td>✅ durable (if configured)</td></tr>
+    <tr><td>TTL expiry</td><td>lazy (checked on access)</td><td>✅ native <code>EXPIRE</code></td></tr>
+    <tr><td>Infrastructure dependency</td><td>none</td><td>requires Redis</td></tr>
+  </table>
+  <div class="box why"><b>Decision:</b> the Phase E backend runs as a <b>single instance</b> → in-memory is sufficient and the simplest option.
+  The plan originally called for Redis up front, but we deferred it to avoid adding infrastructure before it's needed. When scaling horizontally
+  (multiple instances), just swap the body of <code>LoginRateLimiter</code> for Redis (<code>INCR</code> + <code>EXPIRE</code>) — the rest of the system is untouched.</p></div>
+
+  <div class="box ok"><b>Good principle:</b> keep the rate limiter behind a small interface/class (<code>check()</code> / <code>reset()</code>).
+  That way switching the storage backend (memory → Redis) is a local change that never leaks into <code>AuthResource</code> or elsewhere.</p></div>
+
+  <h2>6. Testing</h2>
+  <pre><code>// LoginRateLimiterTest — unit, no container needed
+@Test void blocksAfterExceedingThreshold() {
+    LoginRateLimiter limiter = newLimiter(3);
+    for (int i=0;i&lt;3;i++) limiter.check("10.0.0.1");        // first 3 OK
+    assertThrows(RateLimitedException.class, () -&gt; limiter.check("10.0.0.1")); // 4th → 429
+}
+@Test void resetClearsCounter() { /* successful login clears the count */ }
+@Test void differentIpsAreIndependent() { /* one IP blocked doesn't affect another */ }</code></pre>
+  <p>Because the logic is pure (no I/O), it tests fast as a unit test — set a small <code>maxAttempts</code> and call <code>check()</code> past the threshold.</p>
+
+  <h2>7. Other brute-force defenses (out of scope for now)</h2>
+  <ul>
+    <li><b>Exponential backoff</b>: each failure doubles the wait time.</li>
+    <li><b>CAPTCHA</b> after a few failures.</li>
+    <li><b>Temporary account lockout</b> (careful — DoS risk, see decision ①).</li>
+    <li><b>Anomalous-login alerts</b> (email on login from a new IP/device).</li>
+    <li><b>2FA</b> — noted for Phase F.</li>
+  </ul>
+
+  <footer>
+    Related: <code>16_jwt_auth.html</code> · <code>04_rfc7807_problem_details.md</code>.<br>
+    Code: <code>com.walletledger.auth.LoginRateLimiter</code>, <code>AuthResource.login</code>, <code>RateLimitedException</code> → <code>GlobalExceptionMapper</code> (429).
+  </footer>
+</main>
+</body>
+</html>

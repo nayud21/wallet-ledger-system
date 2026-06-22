@@ -2,6 +2,14 @@
 
 > Read first: [`docs/ERD_AND_PLAN.md`](docs/ERD_AND_PLAN.md). It is the source of truth for the data model, phases (A/B/C), and acceptance criteria.
 
+## Teaching mode (this repo is a learning project)
+The owner uses this repo to learn advanced backend (Java/Quarkus) and React. Whenever you **suggest or propose a feature, change, or technique**, you MUST include:
+1. **What it does** — the concrete behavior/scope.
+2. **Technical points** — the specific concepts/patterns/APIs involved (name them so they're searchable).
+3. **Why this choice** — the reasoning for picking it over alternatives.
+4. **Trade-offs** — what you give up, when it breaks down, what the alternative would buy.
+Keep it concise but never skip the "why" and "trade-off". This applies to proposals/recommendations — not to trivial mechanical edits the user explicitly requested.
+
 ## Project overview
 A **Wallet + Double-Entry Ledger + Reconciliation** system. Two deployables:
 - `backend/` — Quarkus 3.15 service (Java 21, Hibernate Panache, Flyway, PostgreSQL).
