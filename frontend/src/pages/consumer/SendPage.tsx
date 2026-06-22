@@ -4,7 +4,7 @@ import { useMyWallets, useTransfer, useRecentRecipients } from '../../hooks/useW
 import ConsumerLayout from '../../components/consumer/ConsumerLayout';
 import { fmtMoney } from '../../utils/format';
 import { useToast } from '../../context/ToastContext';
-import { fetchWallet } from '../../api/wallets';
+import { fetchRecipient, type RecipientLookup } from '../../api/wallets';
 import type { WalletResponse } from '../../types/api';
 
 const ArrowLeft = () => (
@@ -142,7 +142,7 @@ export default function SendPage() {
 
   const [step, setStep] = useState(0);
   const [toWalletId, setToWalletId] = useState('');
-  const [toWallet, setToWallet] = useState<WalletResponse | null>(null);
+  const [toWallet, setToWallet] = useState<RecipientLookup | null>(null);
   const [recipientError, setRecipientError] = useState('');
   const [recipientLoading, setRecipientLoading] = useState(false);
   const [fromWalletId, setFromWalletId] = useState('');
@@ -164,7 +164,7 @@ export default function SendPage() {
     setRecipientLoading(true);
     setRecipientError('');
     try {
-      const wallet = await fetchWallet(trimmed);
+      const wallet = await fetchRecipient(trimmed);
       setToWallet(wallet);
       setStep(1);
     } catch {

@@ -31,6 +31,17 @@ export function fetchWallet(id: string): Promise<WalletResponse> {
   return apiFetch<WalletResponse>(`/api/v1/wallets/${id}`);
 }
 
+export interface RecipientLookup {
+  id: string;
+  currency: string;
+  status: string;
+}
+
+// Resolve a wallet you're about to send to — minimal info, not ownership-checked.
+export function fetchRecipient(id: string): Promise<RecipientLookup> {
+  return apiFetch<RecipientLookup>(`/api/v1/wallets/${id}/recipient`);
+}
+
 export function fetchWalletEntries(id: string): Promise<LedgerEntryResponse[]> {
   return apiFetch<LedgerEntryResponse[]>(`/api/v1/wallets/${id}/entries`);
 }

@@ -6,7 +6,9 @@ import com.walletledger.ledger.dto.LedgerEntryResponse;
 import com.walletledger.wallet.dto.*;
 import com.walletledger.wallet.event.WalletEventBus;
 import io.smallrye.common.annotation.Blocking;
+import io.smallrye.jwt.auth.principal.JWTParser;
 import io.smallrye.mutiny.Multi;
+import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
@@ -14,6 +16,7 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import lombok.RequiredArgsConstructor;
+import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.resteasy.reactive.RestStreamElementType;
 import java.util.List;
 import java.util.UUID;
@@ -29,6 +32,7 @@ public class WalletResource {
     private final LedgerEntryRepository ledgerEntryRepo;
     private final WalletEventBus walletEventBus;
     private final CurrentUser currentUser;
+    private final JWTParser jwtParser;
 
     @GET
     @RolesAllowed("ADMIN")
@@ -75,6 +79,17 @@ public class WalletResource {
                                                     @QueryParam("size") @DefaultValue("20") int size) {
         return ledgerEntryRepo.findByUserId(currentUser.id(), page, Math.min(size, 100))
             .stream().map(LedgerEntryResponse::from).toList();
+    }
+
+    // Recipient lookup for the send flow: any authenticated user may resolve a wallet they
+    // are about to send to. Returns minimal info only (no balance, no owner) — not BOLA-checked.
+    @GET
+    @Path("/{id}/recipient")
+    @RolesAllowed({"USER", "ADMIN"})
+    public RecipientLookupResponse recipient(@PathParam("id") UUID id) {
+        return walletRepo.findByIdOptional(id)
+            .map(RecipientLookupResponse::from)
+            .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
     }
 
     @GET
@@ -138,16 +153,27 @@ public class WalletResource {
         return walletRepo.findRecentRecipients(currentUser.id(), Math.min(limit, 10));
     }
 
+    // SSE: the browser EventSource API cannot send an Authorization header, so the JWT
+    // arrives as a query param and is verified here manually (endpoint is @PermitAll).
     @GET
     @Path("/{id}/stream")
-    @RolesAllowed({"USER", "ADMIN"})
+    @PermitAll
     @Blocking
     @Produces(MediaType.SERVER_SENT_EVENTS)
     @RestStreamElementType(MediaType.APPLICATION_JSON)
-    public Multi<String> stream(@PathParam("id") UUID id) {
+    public Multi<String> stream(@PathParam("id") UUID id, @QueryParam("token") String token) {
+        JsonWebToken jwt;
+        try {
+            jwt = jwtParser.parse(token);
+        } catch (Exception e) {
+            throw new NotAuthorizedException("Invalid or missing token", "Bearer");
+        }
         Wallet wallet = walletRepo.findByIdOptional(id)
             .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
-        walletService.assertOwnership(wallet);
+        boolean admin = jwt.getGroups() != null && jwt.getGroups().contains("ADMIN");
+        if (!admin && !wallet.userId.equals(UUID.fromString(jwt.getSubject()))) {
+            throw new ForbiddenException("Wallet does not belong to caller");
+        }
         return walletEventBus.subscribe(id);
     }
 }

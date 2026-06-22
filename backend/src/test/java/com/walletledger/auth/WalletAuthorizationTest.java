@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
 class WalletAuthorizationTest {
@@ -92,6 +93,17 @@ class WalletAuthorizationTest {
         given().header("Authorization", "Bearer " + TestAuth.admin())
             .get("/api/v1/wallets/" + walletA)
             .then().statusCode(200);
+    }
+
+    @Test
+    void userB_looksUpRecipientWallet_succeeds_withoutLeakingBalance() {
+        // Send flow: anyone authenticated may resolve a recipient wallet, but only minimal info.
+        given().header("Authorization", "Bearer " + TestAuth.user(userB))
+            .get("/api/v1/wallets/" + walletA + "/recipient")
+            .then().statusCode(200)
+            .body("currency", equalTo("USD"))
+            .body("availableBalance", nullValue())
+            .body("userId", nullValue());
     }
 
     @Test

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../context/ToastContext';
+import { TOKEN_KEY } from '../context/AuthContext';
 import { fmtMoney } from '../utils/format';
 
 interface WalletEvent {
@@ -18,8 +19,11 @@ export function useWalletStream(walletIds: string[]) {
   useEffect(() => {
     if (!walletIds.length) return;
 
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return;
+
     const sources = walletIds.map(id => {
-      const es = new EventSource(`/api/v1/wallets/${id}/stream`);
+      const es = new EventSource(`/api/v1/wallets/${id}/stream?token=${encodeURIComponent(token)}`);
 
       es.onmessage = (e) => {
         try {
@@ -32,8 +36,8 @@ export function useWalletStream(walletIds: string[]) {
               subtitle: `+${fmtMoney(event.amount, event.currency)} credited to your wallet`,
             });
             // Refresh wallet list and entries so balances update
-            queryClient.invalidateQueries({ queryKey: ['wallets'] });
-            queryClient.invalidateQueries({ queryKey: ['entries', id] });
+            queryClient.invalidateQueries({ queryKey: ['myWallets'] });
+            queryClient.invalidateQueries({ queryKey: ['walletEntries', id] });
           }
         } catch {
           // malformed event — ignore
