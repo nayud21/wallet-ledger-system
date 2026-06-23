@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>React Learning Path — Wallet-Ledger</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36;
+    --fg: #e6e8eb; --muted: #9aa3b2; --accent: #5b9dff;
+    --green: #3fb950; --amber: #d29922; --star: #e3b341;
+    --code: #1d2027;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 {
+    font-size: 20px; margin: 40px 0 12px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 16px; margin: 22px 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 8px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    background: var(--code); padding: 1px 6px; border-radius: 4px;
+    font: 13px ui-monospace, "SF Mono", Menlo, monospace; color: #d6dae0;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  th, td {
+    text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border);
+    vertical-align: top; font-size: 14px;
+  }
+  th { color: var(--muted); font-weight: 600; }
+  .tag {
+    display: inline-block; font-size: 11px; font-weight: 700;
+    padding: 2px 8px; border-radius: 999px; letter-spacing: .3px;
+  }
+  .t-done { background: rgba(63,185,80,.15); color: var(--green); }
+  .t-warn { background: rgba(210,153,34,.15); color: var(--amber); }
+  .t-star { background: rgba(227,179,65,.15); color: var(--star); }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px; margin: 14px 0;
+  }
+  .lvl { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .5px; }
+  ul { margin: 6px 0; padding-left: 20px; }
+  li { margin: 3px 0; }
+  ol.order { counter-reset: step; list-style: none; padding-left: 0; }
+  ol.order li {
+    position: relative; padding: 10px 12px 10px 48px; margin: 8px 0;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  }
+  ol.order li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    width: 24px; height: 24px; border-radius: 50%; background: var(--accent);
+    color: #07131f; font-weight: 700; display: grid; place-items: center; font-size: 13px;
+  }
+  .why { color: var(--muted); }
+  .why b { color: var(--fg); }
+  footer { margin-top: 48px; color: var(--muted); font-size: 13px; }
+  .lead { color: var(--muted); font-size: 15px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>React Learning Path — Wallet-Ledger</h1>
+  <p class="sub">Based on <a href="https://roadmap.sh/react" target="_blank">roadmap.sh/react</a>, mapped directly onto this project's code.</p>
+  <p class="lead">Each item states what the project <b>already has</b> (<span class="tag t-done">✅</span>) and what to <b>learn next</b> (<span class="tag t-warn">⚠️ priority</span> / <span class="tag t-star">⭐ core focus</span>).</p>
+
+  <h2>Tier 0 — Fundamentals <span class="tag t-done">already covered ✅</span></h2>
+  <table>
+    <tr><th>roadmap.sh</th><th>In the project</th><th>Status</th></tr>
+    <tr><td>JSX, Components</td><td><a href="../frontend/src/App.tsx">App.tsx</a>, <code>components/</code></td><td><span class="tag t-done">✅</span></td></tr>
+    <tr><td>Props &amp; State (<code>useState</code>)</td><td>forms, modals</td><td><span class="tag t-done">✅</span></td></tr>
+    <tr><td>Conditional render, Lists &amp; keys</td><td><a href="../frontend/src/components/ledger/TransactionTable.tsx">TransactionTable.tsx</a></td><td><span class="tag t-done">✅</span></td></tr>
+    <tr><td>TypeScript + React</td><td>all <code>.tsx</code>, <a href="../frontend/src/types/api.ts">types/api.ts</a></td><td><span class="tag t-done">✅</span></td></tr>
+  </table>
+  <p class="why">→ You're past "Getting Started". No need to relearn, but do a <b>focused re-read</b>: open <code>TransactionTable.tsx</code> and ask yourself "where is the key, and why was that field chosen as the key?"</p>
+
+  <h2>Tier 1 — Core Hooks <span class="tag t-warn">go deep</span></h2>
+
+  <div class="card">
+    <span class="lvl">1. useEffect &amp; lifecycle + cleanup</span> <span class="tag t-warn">⚠️ high priority</span>
+    <ul>
+      <li><b>What:</b> run side-effects, clean up on unmount.</li>
+      <li><b>Technical points:</b> dependency array, cleanup function, <code>EventSource</code> lifecycle.</li>
+      <li><b>Learn from:</b> <a href="../frontend/src/hooks/useWalletStream.ts">useWalletStream.ts</a> — real SSE. Common bug: forgetting to close the stream / duplicate connections.</li>
+      <li><b>Why it matters:</b> the SSE reconnect/leak bug just fixed in commit <code>3b81d21</code> is exactly this class of bug.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <span class="lvl">2. useContext</span> <span class="tag t-done">already used — reinforce</span>
+    <ul>
+      <li><a href="../frontend/src/context/AuthContext.tsx">AuthContext.tsx</a>, <a href="../frontend/src/context/ToastContext.tsx">ToastContext.tsx</a>.</li>
+      <li><b>Trade-off:</b> Context re-renders every consumer when the value changes → why you shouldn't dump all global state into a single context.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <span class="lvl">3. useMemo / useCallback / useRef</span> <span class="tag t-warn">⚠️</span>
+    <ul>
+      <li><b>Learn from:</b> <a href="../frontend/src/utils/balanceSeries.ts">balanceSeries.ts</a> + <a href="../frontend/src/components/consumer/wallets/Spark.tsx">Spark.tsx</a> — chart math worth memoizing.</li>
+      <li><b>Why:</b> avoid recomputing the balance series on every render. <b>Trade-off:</b> memoization isn't free — don't memoize everything.</li>
+    </ul>
+  </div>
+
+  <h2>Tier 2 — Routing <span class="tag t-done">react-router v7</span></h2>
+  <ul>
+    <li><b>In the project:</b> <a href="../frontend/src/App.tsx">App.tsx</a>, split <code>AdminApp</code> vs consumer pages, <a href="../frontend/src/pages/LoginPage.tsx">LoginPage.tsx</a>.</li>
+    <li><b>Learn:</b> nested routes, <code>&lt;Outlet&gt;</code>, <b>protected routes</b> (tied to <code>AuthContext</code>), <code>useNavigate</code>, <code>useParams</code>.</li>
+    <li><b>Exercise:</b> visiting <code>/wallets/:id</code> while logged out should redirect to <code>/login</code>.</li>
+  </ul>
+
+  <h2>Tier 3 — Server state: TanStack Query <span class="tag t-star">⭐ core focus</span></h2>
+  <p class="sub">CLAUDE.md mandates: <i>"All server state goes through TanStack Query. No useEffect + fetch."</i></p>
+  <ul>
+    <li><b>In the project:</b> <a href="../frontend/src/hooks/useWallets.ts">useWallets.ts</a>, <a href="../frontend/src/hooks/useLedger.ts">useLedger.ts</a>, <a href="../frontend/src/hooks/useEvents.ts">useEvents.ts</a>.</li>
+  </ul>
+  <ol class="order">
+    <li><code>useQuery</code> — queryKey, staleTime, caching (already used).</li>
+    <li><code>useMutation</code> + <b>invalidateQueries</b> — after top-up/transfer, refresh the balance.</li>
+    <li><b>Optimistic updates</b> — update the UI before the server responds (<a href="../frontend/src/components/wallets/TransferForm.tsx">TransferForm.tsx</a>).</li>
+    <li><b>Query key factory</b> — standardize keys so invalidation hits the right thing.</li>
+  </ol>
+  <p class="why"><b>Why over useEffect+fetch:</b> handles caching, dedupe, retry, loading/error for you. <b>Trade-off:</b> adds a layer of concepts (queryKey, staleTime) — get them wrong and you'll see "stale data".</p>
+
+  <h2>Tier 4 — Forms &amp; Validation <span class="tag t-warn">⚠️</span></h2>
+  <ul>
+    <li><b>In the project:</b> <a href="../frontend/src/components/wallets/TopUpForm.tsx">TopUpForm.tsx</a>, <a href="../frontend/src/components/wallets/TransferForm.tsx">TransferForm.tsx</a>, <a href="../frontend/src/components/consumer/wallets/AddWalletModal.tsx">AddWalletModal.tsx</a>.</li>
+    <li><b>roadmap.sh suggests:</b> React Hook Form + Zod.</li>
+    <li><b>Why:</b> money forms need client-side <code>BigDecimal</code>/currency validation (matching the backend money rules). <b>Trade-off:</b> adding Zod buys declarative, type-safe validation at the cost of another dependency.</li>
+  </ul>
+
+  <h2>Tier 5 — Patterns &amp; Performance <span class="tag t-warn">advanced</span></h2>
+  <ul>
+    <li>Custom hooks <span class="tag t-done">✅</span> — you already have <code>hooks/</code>.</li>
+    <li>Composition vs prop drilling — look at the <code>components/consumer/</code> tree.</li>
+    <li><code>React.memo</code>, code-splitting <code>lazy</code>/<code>Suspense</code> — split <code>AdminApp</code> into its own bundle.</li>
+    <li>Error Boundaries — one error shouldn't crash the whole app.</li>
+  </ul>
+
+  <h2>Tier 6 — Testing <span class="tag t-warn">gap</span></h2>
+  <ul>
+    <li>The frontend currently has <b>no tests</b> (only <code>npm run build</code>).</li>
+    <li><b>Learn:</b> Vitest + React Testing Library → test <a href="../frontend/src/components/wallets/TransferForm.tsx">TransferForm.tsx</a> (render → type → submit → mock the mutation).</li>
+  </ul>
+
+  <h2>Suggested order</h2>
+  <ol class="order">
+    <li><b>TanStack Query in depth</b> (Tier 3) — core rule, used daily.</li>
+    <li><b>useEffect + cleanup</b> (Tier 1) — because of the SSE bug just hit.</li>
+    <li><b>Protected routing</b> (Tier 2) — currently in Phase E (auth).</li>
+    <li><b>Forms + validation</b> (Tier 4).</li>
+    <li><b>Testing</b> (Tier 6) — fill the gap.</li>
+    <li><b>Performance/patterns</b> (Tier 5) — once the app is stable.</li>
+  </ol>
+
+  <footer>
+    Wallet-Ledger System · React Learning Path · tracked on branch <code>feat/phase-e-auth</code>
+  </footer>
+
+</div>
+</body>
+</html>
