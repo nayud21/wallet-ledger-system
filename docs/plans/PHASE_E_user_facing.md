@@ -21,6 +21,10 @@ The existing codebase has no session, no token, no ownership check — only a `X
 
 ---
 
+> ⚠️ **Backend tasks E1–E5 dưới đây đã lỗi thời** (migration `V4`, package `com.walletledger.api/service`).
+> Theo plan backend chính thức: [`PHASE_E_auth_backend.md`](PHASE_E_auth_backend.md) (migration **V10**,
+> feature package `com.walletledger.auth`). Phần frontend E6–E9 vẫn dùng doc này.
+
 ## Task E1 — Schema: add auth columns to `users`
 
 **Files to add:**

@@ -5,7 +5,6 @@ import com.walletledger.ledger.dto.ReversalRequest;
 import com.walletledger.shared.exception.AlreadyReversedException;
 import com.walletledger.shared.exception.IdempotencyConflictException;
 import com.walletledger.wallet.Wallet;
-import com.walletledger.wallet.WalletBalanceSnapshot;
 import com.walletledger.wallet.WalletBalanceSnapshotRepository;
 import com.walletledger.wallet.WalletRepository;
 import io.quarkus.test.InjectMock;
@@ -49,7 +48,9 @@ class LedgerServiceTest {
         doNothing().when(idempotencyKeyRepo).persist(any(String.class), any(String.class));
         when(ledgerTxRepo.findByIdOptional(1L)).thenReturn(Optional.of(originalTx));
         when(ledgerEntryRepo.findByTxId(1L)).thenReturn(List.of());
-        doNothing().when(ledgerTxRepo).persist(any(LedgerTransaction.class));
+        // Mirror the DB: persisting assigns a generated id (the audit diff reads reversal.id).
+        doAnswer(inv -> { ((LedgerTransaction) inv.getArgument(0)).id = 2L; return null; })
+            .when(ledgerTxRepo).persist(any(LedgerTransaction.class));
     }
 
     @Test
@@ -95,7 +96,6 @@ class LedgerServiceTest {
         wallet.availableBalance = new BigDecimal("100.0000");
         wallet.reservedBalance = BigDecimal.ZERO;
         when(walletRepo.findByLedgerAccountId(10L)).thenReturn(Optional.of(wallet));
-        doNothing().when(snapshotRepo).persist(any(WalletBalanceSnapshot.class));
         doNothing().when(ledgerEntryRepo).persist(any(LedgerEntry.class));
 
         ReversalRequest req = new ReversalRequest(1L, "test", "ik-rev-ok");
@@ -104,6 +104,6 @@ class LedgerServiceTest {
         // CREDIT reversed → DEBIT in reversal → wallet loses balance
         assertEquals(new BigDecimal("0.0000"), wallet.availableBalance);
         verify(ledgerEntryRepo).persist(any(LedgerEntry.class));
-        verify(snapshotRepo).persist(any(WalletBalanceSnapshot.class));
+        verify(snapshotRepo).record(any(Wallet.class), anyLong());
     }
 }

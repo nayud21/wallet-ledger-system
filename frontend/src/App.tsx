@@ -10,9 +10,19 @@ import WalletsPage from './pages/consumer/WalletsPage';
 import ConsumerLayout from './components/consumer/ConsumerLayout';
 import AdminApp from './pages/AdminApp';
 
+// Consumer routes: any signed-in user, but admins belong in the admin workspace.
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
+  if (user.role === 'ADMIN') return <Navigate to="/admin" replace />;
+  return <>{children}</>;
+}
+
+// Admin workspace: signed-in AND role ADMIN. Mirrors backend @RolesAllowed("ADMIN").
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== 'ADMIN') return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -31,7 +41,7 @@ export default function App() {
       <Route path="/settings"  element={<ProtectedRoute><ConsumerLayout><StubPage title="Settings" body="Account settings — coming soon." /></ConsumerLayout></ProtectedRoute>} />
       <Route path="/help"      element={<ProtectedRoute><ConsumerLayout><StubPage title="Help & Support" /></ConsumerLayout></ProtectedRoute>} />
 
-      <Route path="/admin/*" element={<AdminApp />} />
+      <Route path="/admin/*" element={<AdminRoute><AdminApp /></AdminRoute>} />
 
       <Route path="/" element={<NavigateToDefault />} />
       <Route path="*" element={<NavigateToDefault />} />
@@ -41,5 +51,6 @@ export default function App() {
 
 function NavigateToDefault() {
   const { user } = useAuth();
-  return <Navigate to={user ? '/dashboard' : '/login'} replace />;
+  if (!user) return <Navigate to="/login" replace />;
+  return <Navigate to={user.role === 'ADMIN' ? '/admin' : '/dashboard'} replace />;
 }

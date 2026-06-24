@@ -20,6 +20,13 @@ Notes extracted from building a production-grade Wallet + Double-Entry Ledger sy
 | [12](12_tanstack_query_patterns.md) | **TanStack Query Patterns** | queryKey design, invalidation, `enabled` flag, stale-while-revalidate, anti-pattern `useEffect+fetch` |
 | [13](13_ddd_aggregate_boundaries.md) | **DDD Aggregate Boundaries** | Plain ID vs `@ManyToOne`, cross-aggregate queries, N+1 prevention, native SQL trade-off |
 | [14](14_remaining_technical_gaps.md) | **Remaining Technical Gaps** | Sum-zero CHECK, reserved-balance flow, outbox, hash-chained audit, observability, multi-currency, CoA, saga, CQRS, event sourcing, sharding |
+| [15](15_idempotency_keys_table.md) | **Idempotency Keys Table** | Dedicated dedup table, TTL pruning, decoupling from `ledger_transactions` |
+| [16](16_jwt_auth.html) | **JWT Auth, RBAC & BOLA** 🔑 | SmallRye JWT, RSA self-issued keys, `@RolesAllowed`, service-layer ownership, bcrypt, 401 vs 403, SSE-token & recipient-lookup gotchas |
+| [17](17_login_rate_limiting.html) | **Login Rate Limiting** 🔑 | Fixed-window per-IP counter, why not per-username, 429, in-memory vs Redis trade-off |
+| [18](18_backend_architecture.html) | **Backend Architecture** 🗺️ | Package-by-feature, layered Resource/Service/Repository, constructor DI, request lifecycle, invariants, async/eventing — overview of notes 01–17 |
+| [19](19_react_architecture.html) | **React Architecture** 🗺️ | Server vs client state, TanStack Query hooks, single fetch layer, Context + custom hooks, route guards, the legitimate `useEffect` (SSE), TS guardrails |
+
+> 🔑 = Phase E (auth). 🗺️ = architecture overviews. Notes 16–19 are HTML — open them in a browser.
 
 ## How These Topics Connect
 
@@ -28,7 +35,8 @@ Request comes in
     │
     ├─ @Valid ──────────────────────────── Bean Validation (DTO layer)
     │
-    ├─ X-User-Id header ────────────────── BOLA check (resource layer)
+    ├─ JWT verify (Bearer) ─────────────── Authentication + RBAC @RolesAllowed (note 16)
+    │       └─ assertOwnership() ───────── BOLA check (service layer)
     │
     ├─ Idempotency key lookup ──────────── Idempotency + conflict detection (service layer)
     │       └─ SHA-256 fingerprint

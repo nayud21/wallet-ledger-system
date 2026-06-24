@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchUser } from '../api/users';
+import { login as loginRequest, register as registerRequest } from '../api/auth';
 import { useAuth } from '../context/AuthContext';
 
 const WalletLogo = () => (
@@ -19,67 +19,107 @@ const WarnIcon = () => (
   </svg>
 );
 
+const inputCls = "h-10 w-full px-3 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-400";
+
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [userId, setUserId] = useState('');
+
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [usernameOrEmail, setUsernameOrEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const trimmed = userId.trim();
-    if (!trimmed) return;
-
     setLoading(true);
     setError('');
     try {
-      const user = await fetchUser(trimmed);
-      login({ id: user.id, username: user.username, email: user.email });
+      const token = mode === 'login'
+        ? (await loginRequest(usernameOrEmail.trim(), password)).accessToken
+        : (await registerRequest(username.trim(), email.trim(), password)).accessToken;
+      login(token);
       navigate('/dashboard', { replace: true });
-    } catch {
-      setError('User not found. Check your User ID and try again.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.');
     } finally {
       setLoading(false);
     }
   }
 
+  function switchMode(next: 'login' | 'register') {
+    setMode(next);
+    setError('');
+    setPassword('');
+  }
+
+  const canSubmit = mode === 'login'
+    ? usernameOrEmail.trim() && password
+    : username.trim() && email.trim() && password.length >= 8;
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        {/* Header */}
         <div className="flex flex-col items-center mb-6">
           <div className="w-12 h-12 rounded-2xl bg-indigo-600 grid place-items-center mb-3">
             <WalletLogo />
           </div>
-          <div className="text-xl font-semibold tracking-tight text-slate-900">Welcome back</div>
-          <div className="text-sm text-slate-500 mt-0.5">Sign in to your MyWallet account</div>
+          <div className="text-xl font-semibold tracking-tight text-slate-900">
+            {mode === 'login' ? 'Welcome back' : 'Create your account'}
+          </div>
+          <div className="text-sm text-slate-500 mt-0.5">
+            {mode === 'login' ? 'Sign in to your MyWallet account' : 'Sign up to start using MyWallet'}
+          </div>
         </div>
 
-        {/* Card */}
         <div className="bg-white border border-slate-200 rounded-xl p-5">
           <form className="space-y-4" onSubmit={handleSubmit}>
+            {mode === 'register' && (
+              <div>
+                <label className="text-xs font-medium text-slate-700 block mb-1.5">Username</label>
+                <input type="text" value={username} autoFocus
+                  onChange={e => { setUsername(e.target.value); setError(''); }}
+                  placeholder="yourname" className={inputCls} />
+              </div>
+            )}
+
+            {mode === 'register' ? (
+              <div>
+                <label className="text-xs font-medium text-slate-700 block mb-1.5">Email</label>
+                <input type="email" value={email}
+                  onChange={e => { setEmail(e.target.value); setError(''); }}
+                  placeholder="you@example.com" className={inputCls} />
+              </div>
+            ) : (
+              <div>
+                <label className="text-xs font-medium text-slate-700 block mb-1.5">Username or email</label>
+                <input type="text" value={usernameOrEmail} autoFocus
+                  onChange={e => { setUsernameOrEmail(e.target.value); setError(''); }}
+                  placeholder="yourname or you@example.com" className={inputCls} />
+              </div>
+            )}
+
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-medium text-slate-700">User ID</label>
-                <span className="text-[11px] text-slate-400">your account UUID</span>
+                <label className="text-xs font-medium text-slate-700">Password</label>
+                <button type="button" onClick={() => setShowPassword(s => !s)}
+                  className="text-[11px] text-indigo-600 hover:text-indigo-700">
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
               </div>
-              <input
-                type="text"
-                value={userId}
-                onChange={e => { setUserId(e.target.value); setError(''); }}
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                className="h-10 w-full px-3 text-sm font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-400"
-                autoFocus
-              />
+              <input type={showPassword ? 'text' : 'password'} value={password}
+                onChange={e => { setPassword(e.target.value); setError(''); }}
+                placeholder={mode === 'register' ? 'At least 8 characters' : '••••••••'}
+                className={inputCls} />
             </div>
 
-            <button
-              type="submit"
-              disabled={!userId.trim() || loading}
-              className="h-11 w-full px-5 text-[15px] inline-flex items-center justify-center rounded-lg font-medium transition-colors bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600 disabled:bg-indigo-300 disabled:border-indigo-300 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Signing in…' : 'Sign in'}
+            <button type="submit" disabled={!canSubmit || loading}
+              className="h-11 w-full px-5 text-[15px] inline-flex items-center justify-center rounded-lg font-medium transition-colors bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600 disabled:bg-indigo-300 disabled:border-indigo-300 disabled:cursor-not-allowed">
+              {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
             </button>
 
             {error && (
@@ -91,11 +131,16 @@ export default function LoginPage() {
           </form>
         </div>
 
-        {/* Mock notice */}
-        <p className="text-center text-[11px] text-slate-400 mt-4">
-          Mock login — paste a user UUID from the database.
-          {' '}Real auth is tracked in{' '}
-          <span className="font-mono">docs/learning-notes/10_auth_future.md</span>.
+        <p className="text-center text-[13px] text-slate-500 mt-4">
+          {mode === 'login' ? (
+            <>Don't have an account?{' '}
+              <button onClick={() => switchMode('register')} className="font-medium text-indigo-600 hover:text-indigo-700">Sign up</button>
+            </>
+          ) : (
+            <>Already have an account?{' '}
+              <button onClick={() => switchMode('login')} className="font-medium text-indigo-600 hover:text-indigo-700">Sign in</button>
+            </>
+          )}
         </p>
       </div>
     </div>

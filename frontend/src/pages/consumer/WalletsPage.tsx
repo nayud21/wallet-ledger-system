@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import AddWalletModal from '../../components/consumer/wallets/AddWalletModal';
-import { useAuth } from '../../context/AuthContext';
-import { useWallets, useWalletEntries } from '../../hooks/useWallets';
+import { useMyWallets, useWalletEntries } from '../../hooks/useWallets';
 import ConsumerLayout from '../../components/consumer/ConsumerLayout';
 import Card from '../../components/consumer/ui/Card';
 import Btn from '../../components/consumer/ui/Btn';
@@ -28,8 +27,7 @@ function toUsd(amount: number, currency: string): number {
 }
 
 export default function WalletsPage() {
-  const { user } = useAuth();
-  const { data: walletsRaw, isLoading } = useWallets(user!.id);
+  const { data: walletsRaw, isLoading } = useMyWallets();
   const wallets = useMemo(
     () => (walletsRaw ?? []).map((w, i) => enrichWallet(w, i)),
     [walletsRaw],

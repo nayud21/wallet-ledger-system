@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import { useWallets, useTransfer, useRecentRecipients } from '../../hooks/useWallets';
+import { useMyWallets, useTransfer, useRecentRecipients } from '../../hooks/useWallets';
 import ConsumerLayout from '../../components/consumer/ConsumerLayout';
 import { fmtMoney } from '../../utils/format';
 import { useToast } from '../../context/ToastContext';
-import { fetchWallet } from '../../api/wallets';
+import { fetchRecipient, type RecipientLookup } from '../../api/wallets';
 import type { WalletResponse } from '../../types/api';
 
 const ArrowLeft = () => (
@@ -134,17 +133,16 @@ function SummaryRow({ label, children, emphasize }: { label: string; children: R
 }
 
 export default function SendPage() {
-  const { user } = useAuth();
   const navigate = useNavigate();
-  const { data: wallets } = useWallets(user!.id);
+  const { data: wallets } = useMyWallets();
   const transfer = useTransfer();
   const toast = useToast();
 
-  const { data: recipients = [] } = useRecentRecipients(user!.id);
+  const { data: recipients = [] } = useRecentRecipients();
 
   const [step, setStep] = useState(0);
   const [toWalletId, setToWalletId] = useState('');
-  const [toWallet, setToWallet] = useState<WalletResponse | null>(null);
+  const [toWallet, setToWallet] = useState<RecipientLookup | null>(null);
   const [recipientError, setRecipientError] = useState('');
   const [recipientLoading, setRecipientLoading] = useState(false);
   const [fromWalletId, setFromWalletId] = useState('');
@@ -166,7 +164,7 @@ export default function SendPage() {
     setRecipientLoading(true);
     setRecipientError('');
     try {
-      const wallet = await fetchWallet(trimmed);
+      const wallet = await fetchRecipient(trimmed);
       setToWallet(wallet);
       setStep(1);
     } catch {

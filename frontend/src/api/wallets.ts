@@ -18,8 +18,28 @@ export function fetchWallets(userId?: string, status?: string): Promise<WalletRe
   return apiFetch<WalletResponse[]>(`/api/v1/wallets${qs}`);
 }
 
+// User-scoped: returns only the authenticated caller's wallets (derived from the JWT).
+export function fetchMyWallets(): Promise<WalletResponse[]> {
+  return apiFetch<WalletResponse[]>('/api/v1/wallets/me');
+}
+
+export function fetchMyTransactions(page = 0, size = 20): Promise<LedgerEntryResponse[]> {
+  return apiFetch<LedgerEntryResponse[]>(`/api/v1/wallets/me/transactions?page=${page}&size=${size}`);
+}
+
 export function fetchWallet(id: string): Promise<WalletResponse> {
   return apiFetch<WalletResponse>(`/api/v1/wallets/${id}`);
+}
+
+export interface RecipientLookup {
+  id: string;
+  currency: string;
+  status: string;
+}
+
+// Resolve a wallet you're about to send to — minimal info, not ownership-checked.
+export function fetchRecipient(id: string): Promise<RecipientLookup> {
+  return apiFetch<RecipientLookup>(`/api/v1/wallets/${id}/recipient`);
 }
 
 export function fetchWalletEntries(id: string): Promise<LedgerEntryResponse[]> {
@@ -47,10 +67,8 @@ export function transferWallet(req: TransferRequest): Promise<TransferResponse> 
   });
 }
 
-export function fetchRecentRecipients(userId: string, limit = 5): Promise<RecentRecipientResponse[]> {
-  return apiFetch<RecentRecipientResponse[]>(
-    `/api/v1/wallets/recent-recipients?userId=${encodeURIComponent(userId)}&limit=${limit}`
-  );
+export function fetchRecentRecipients(limit = 5): Promise<RecentRecipientResponse[]> {
+  return apiFetch<RecentRecipientResponse[]>(`/api/v1/wallets/recent-recipients?limit=${limit}`);
 }
 
 export function fetchWalletStats(): Promise<WalletStatsResponse> {

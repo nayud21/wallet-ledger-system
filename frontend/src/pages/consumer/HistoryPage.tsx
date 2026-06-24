@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useAuth } from '../../context/AuthContext';
-import { useWallets, useWalletEntries } from '../../hooks/useWallets';
+import { useMyWallets, useWalletEntries } from '../../hooks/useWallets';
 import ConsumerLayout from '../../components/consumer/ConsumerLayout';
 import Card from '../../components/consumer/ui/Card';
 import Badge from '../../components/consumer/ui/Badge';
@@ -40,8 +39,7 @@ function fmtDateTime(iso: string) {
 }
 
 export default function HistoryPage() {
-  const { user } = useAuth();
-  const { data: wallets } = useWallets(user!.id);
+  const { data: wallets } = useMyWallets();
   const walletIds = wallets?.map((w) => w.id) ?? [];
   const { entries, isLoading } = useAllEntries(walletIds);
 

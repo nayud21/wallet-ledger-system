@@ -1,6 +1,20 @@
 # Project Status — Wallet Ledger System
 
-> Last updated: 2026-05-20
+> Last updated: 2026-06-19
+
+## Tổng quan phase
+
+| Phase | Nội dung | Trạng thái |
+|---|---|---|
+| **A** | Core ledger: top-up / transfer / reversal | ✅ Hoàn thành |
+| **B** | Webhook inbox + audit log + idempotency hardening | ✅ Hoàn thành |
+| **C** | Reconciliation engine & jobs | ✅ Hoàn thành |
+| **E** | JWT auth + user-facing app | ✅ Hoàn thành (branch `feat/phase-e-auth`) |
+
+> Auth đã dùng **JWT (SmallRye, RSA self-issued)** với 2 role `USER`/`ADMIN`. BOLA enforce ở service layer
+> (`WalletService.assertOwnership`), `@RolesAllowed` trên mọi resource, webhook giữ `@PermitAll`.
+> Header `X-User-Id` cũ đã bị loại bỏ hoàn toàn. Chi tiết: [`docs/plans/PHASE_E_auth_backend.md`](plans/PHASE_E_auth_backend.md).
+> Bootstrap admin (dev): `admin@walletledger.local` / `Admin@12345`.
 
 ---
 
@@ -148,46 +162,46 @@ frontend/src/
 
 ---
 
-## Phase B — CHƯA LÀM ⏳
+## Phase B — HOÀN THÀNH ✅
 
-### 1. Webhook Inbox (Phase B — ưu tiên cao nhất)
+### 1. Webhook Inbox
 
-**Backend cần thêm:**
-- `payment_events` table migration (`BIGINT id`, `provider`, `external_ref`, `jsonb payload`, `varchar status`, `created_at`)
-- `POST /api/v1/payment/webhook` — lưu raw payload vào `payment_events`, trả về `200 OK` ngay
-- `@Scheduled` worker xử lý events `PENDING → PROCESSED | FAILED` với idempotent semantics
-- `GET /api/v1/payment/events?page=&size=` — list events
+Package [`payment/`](../backend/src/main/java/com/walletledger/payment/):
+- `PaymentEvent` + `PaymentEventRepository` — lưu raw payload (`jsonb`) vào `payment_events`
+- `POST /api/v1/payment/webhook` — trả `200 OK` ngay, persist raw payload
+- `GET /api/v1/payment/events` — list events (phân trang)
+- `PaymentEventProcessor` — `@Scheduled` worker xử lý events `PENDING → PROCESSED | FAILED` idempotent
 
-**Frontend cần thêm:**
-- Page "Inbox" (hiện đang là placeholder trong sidebar)
-- `api/events.ts` + `hooks/useEvents.ts`
-- `components/inbox/EventTable.tsx`
-- Kết nối vào `InboxPage.tsx`
+### 2. Audit logging
 
-### 2. KPI Strip — backend APIs
+Package [`audit/`](../backend/src/main/java/com/walletledger/audit/): `AuditLog` + `AuditLogRepository` + `AuditLogService`. Ghi 1 row cho mỗi state-changing action (CREATE / TOP_UP / TRANSFER / FREEZE / REVERSAL...). `performed_by` mặc định `"system"` — sẽ lấy từ JWT principal ở Phase E.
 
-`KpiStrip.tsx` hiện dùng placeholder data. Cần thêm:
-- `GET /api/v1/wallets/stats` — trả về `{ totalWallets, activeWallets, totalVolume24h, pendingEvents }`
+### 3. Idempotency hardening
 
-### 3. Filter/status tabs trên WalletsPage
+Bảng `idempotency_keys` riêng (migrations V5–V8): tách dedup bookkeeping khỏi `ledger_transactions`, thêm `request_hash` (conflict detection) và `entity_id` reference. `ledger_transactions.idempotency_key` giữ lại làm trace reference (non-unique).
 
-UI có tabs All / Active / Frozen nhưng chưa wired — cần thêm `?status=` query param vào `GET /api/v1/wallets`.
+### 4. KPI Strip + Freeze/Unfreeze + status filter
 
-### 4. Freeze / Unfreeze wallet
-
-- `POST /api/v1/wallets/{id}/freeze`
-- `POST /api/v1/wallets/{id}/unfreeze`
-- Frontend: nút trong WalletDetail
+- `GET /api/v1/wallets/stats` đã có (`WalletResource.stats()`).
+- `POST /api/v1/wallets/{id}/freeze` + `/unfreeze` đã có.
+- `GET /api/v1/wallets?status=` filter đã wired.
 
 ---
 
-## Phase C — Reconciliation (chưa bắt đầu)
+## Phase C — Reconciliation — HOÀN THÀNH ✅
 
-- `external_statements` table + upload endpoint
-- `ReconciliationRunner` (scheduled job)
-- `reconciliation_matches` + `reconciliation_exceptions` tables
-- Admin UI: side-by-side compare ledger vs. statement
-- Page "Recon" trong sidebar (hiện là placeholder)
+Package [`reconciliation/`](../backend/src/main/java/com/walletledger/reconciliation/) (commit `14b1dd5`):
+- `ExternalStatement` + upload endpoint `POST /api/v1/statements/upload`
+- `ReconciliationService` + `ReconciliationRunner` (scheduled) — match `ledger_entries` theo `(amount, date, reference)`
+- `reconciliation_matches` + `reconciliation_exceptions` tables + repositories
+- `StatementResource`: `/reconcile`, `/runs`, `/runs/{id}/matches`, `/runs/{id}/exceptions`
+- Migration `V9__add_reconciliation_indexes.sql`
+
+---
+
+## Phase E — JWT Auth + User-facing — CHƯA BẮT ĐẦU ⏳
+
+Plan chi tiết: [`docs/plans/PHASE_E_user_facing.md`](plans/PHASE_E_user_facing.md). Tóm tắt: thêm cột auth vào `users` (migration **V10**), JWT self-issued (SmallRye JWT), `@RolesAllowed` + BOLA enforcement trong service layer, frontend login/register + ProtectedRoute. Hiện chưa có file nào liên quan JWT trong codebase.
 
 ---
 

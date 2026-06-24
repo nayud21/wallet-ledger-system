@@ -1,10 +1,13 @@
 package com.walletledger;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.RestAssured;
+import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -46,6 +49,15 @@ class LedgerReversalTest {
                 "VALUES (?1, 'USD', 'test-rev-w', 0.00, ?2) RETURNING id", UUID.class)
             .setParameter(1, userId).setParameter(2, liability)
             .getSingleResult();
+
+        // Reversal is ADMIN-only; top-up here is via the same admin (ownership bypassed).
+        RestAssured.requestSpecification = new RequestSpecBuilder()
+            .addHeader("Authorization", "Bearer " + TestAuth.admin()).build();
+    }
+
+    @AfterEach
+    void clearAuth() {
+        RestAssured.requestSpecification = null;
     }
 
     @Test

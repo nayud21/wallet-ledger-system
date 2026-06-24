@@ -38,6 +38,8 @@ pnpm-debug.log*
 .env.*.local
 *.pem
 *.key
+# Public JWT verification key is safe to commit; private key stays ignored.
+!backend/src/main/resources/publicKey.pem
 
 # Logs
 *.log
@@ -45,3 +47,6 @@ logs/
 
 # Docker
 postgres_data/
+
+# Local MCP server config (machine-specific paths + local DB creds)
+.mcp.json

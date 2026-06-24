@@ -1,5 +1,6 @@
 package com.walletledger.wallet;
 
+import com.walletledger.auth.CurrentUser;
 import com.walletledger.idempotency.IdempotencyKeyRepository;
 import com.walletledger.ledger.*;
 import com.walletledger.shared.exception.*;
@@ -31,6 +32,7 @@ class WalletServiceTest {
     @InjectMock WalletBalanceSnapshotRepository snapshotRepo;
     @InjectMock UserRepository userRepo;
     @InjectMock IdempotencyKeyRepository idempotencyKeyRepo;
+    @InjectMock CurrentUser currentUser;
 
     private UUID walletId;
     private Wallet activeWallet;
@@ -60,6 +62,7 @@ class WalletServiceTest {
         settlement.name = "SETTLEMENT_ASSET";
         settlement.type = "ASSET";
 
+        when(currentUser.isAdmin()).thenReturn(true);
         when(idempotencyKeyRepo.checkAndGuard(any(), any())).thenReturn(false);
         doNothing().when(idempotencyKeyRepo).persist(any(String.class), any(String.class));
         when(walletRepo.findByIdForUpdate(walletId)).thenReturn(Optional.of(activeWallet));

@@ -2,6 +2,14 @@
 
 > Read first: [`docs/ERD_AND_PLAN.md`](docs/ERD_AND_PLAN.md). It is the source of truth for the data model, phases (A/B/C), and acceptance criteria.
 
+## Teaching mode (this repo is a learning project)
+The owner uses this repo to learn advanced backend (Java/Quarkus) and React. Whenever you **suggest or propose a feature, change, or technique**, you MUST include:
+1. **What it does** — the concrete behavior/scope.
+2. **Technical points** — the specific concepts/patterns/APIs involved (name them so they're searchable).
+3. **Why this choice** — the reasoning for picking it over alternatives.
+4. **Trade-offs** — what you give up, when it breaks down, what the alternative would buy.
+Keep it concise but never skip the "why" and "trade-off". This applies to proposals/recommendations — not to trivial mechanical edits the user explicitly requested.
+
 ## Project overview
 A **Wallet + Double-Entry Ledger + Reconciliation** system. Two deployables:
 - `backend/` — Quarkus 3.15 service (Java 21, Hibernate Panache, Flyway, PostgreSQL).
@@ -24,6 +32,7 @@ PostgreSQL runs via `docker-compose up -d` from the repo root.
 - **Idempotency:** every mutating endpoint accepts an `idempotencyKey`. Persist with UNIQUE constraint. Duplicate calls return the original result, not a new mutation.
 - **Concurrency:** wallet mutations use `SELECT ... FOR UPDATE`. For transfers, lock wallets in ascending ID order to prevent deadlock.
 - **Security (OWASP):** validate with `@Valid` at REST boundaries; enforce wallet ownership (no BOLA); never log webhook bodies or secrets; only parameterized queries.
+- **Auth (Phase E):** every endpoint carries `@RolesAllowed` (roles `USER`/`ADMIN`) or an explicit `@PermitAll` (auth + webhook only). Identity comes from the JWT (`CurrentUser`), never from request params/headers — never reintroduce `X-User-Id`. Ownership (BOLA) is checked in the service layer (`WalletService.assertOwnership`), admins bypass. Webhook stays `@PermitAll` (verify HMAC). Never commit `privateKey.pem`; keys live at classpath root, not under `META-INF/resources/` (that path is web-served).
 
 ### Frontend rules
 - **Laptop-first density.** Use compact tables, side-by-side panels for reconciliation screens, `text-sm` defaults. Don't waste horizontal space.

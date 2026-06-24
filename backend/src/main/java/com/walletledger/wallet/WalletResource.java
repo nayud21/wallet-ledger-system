@@ -1,16 +1,22 @@
 package com.walletledger.wallet;
 
+import com.walletledger.auth.CurrentUser;
 import com.walletledger.ledger.LedgerEntryRepository;
 import com.walletledger.ledger.dto.LedgerEntryResponse;
 import com.walletledger.wallet.dto.*;
 import com.walletledger.wallet.event.WalletEventBus;
+import io.smallrye.common.annotation.Blocking;
+import io.smallrye.jwt.auth.principal.JWTParser;
 import io.smallrye.mutiny.Multi;
+import jakarta.annotation.security.PermitAll;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import lombok.RequiredArgsConstructor;
+import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.resteasy.reactive.RestStreamElementType;
 import java.util.List;
 import java.util.UUID;
@@ -25,8 +31,11 @@ public class WalletResource {
     private final WalletRepository walletRepo;
     private final LedgerEntryRepository ledgerEntryRepo;
     private final WalletEventBus walletEventBus;
+    private final CurrentUser currentUser;
+    private final JWTParser jwtParser;
 
     @GET
+    @RolesAllowed("ADMIN")
     public List<WalletResponse> list(@QueryParam("userId") UUID userId,
                                      @QueryParam("status") String status) {
         if (userId != null && status != null) {
@@ -44,45 +53,76 @@ public class WalletResource {
 
     @GET
     @Path("/stats")
+    @RolesAllowed("ADMIN")
     public WalletStatsResponse stats() {
         return walletService.getStats();
     }
 
     @POST
+    @RolesAllowed({"USER", "ADMIN"})
     public Response create(@Valid CreateWalletRequest req) {
         WalletResponse result = walletService.createWallet(req);
         return Response.status(Response.Status.CREATED).entity(result).build();
     }
 
     @GET
-    @Path("/{id}")
-    public WalletResponse get(@PathParam("id") UUID id) {
+    @Path("/me")
+    @RolesAllowed("USER")
+    public List<WalletResponse> myWallets() {
+        return walletRepo.findByUserId(currentUser.id()).stream().map(WalletResponse::from).toList();
+    }
+
+    @GET
+    @Path("/me/transactions")
+    @RolesAllowed("USER")
+    public List<LedgerEntryResponse> myTransactions(@QueryParam("page") @DefaultValue("0") int page,
+                                                    @QueryParam("size") @DefaultValue("20") int size) {
+        return ledgerEntryRepo.findByUserId(currentUser.id(), page, Math.min(size, 100))
+            .stream().map(LedgerEntryResponse::from).toList();
+    }
+
+    // Recipient lookup for the send flow: any authenticated user may resolve a wallet they
+    // are about to send to. Returns minimal info only (no balance, no owner) — not BOLA-checked.
+    @GET
+    @Path("/{id}/recipient")
+    @RolesAllowed({"USER", "ADMIN"})
+    public RecipientLookupResponse recipient(@PathParam("id") UUID id) {
         return walletRepo.findByIdOptional(id)
-            .map(WalletResponse::from)
+            .map(RecipientLookupResponse::from)
             .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
+    }
+
+    @GET
+    @Path("/{id}")
+    @RolesAllowed({"USER", "ADMIN"})
+    public WalletResponse get(@PathParam("id") UUID id) {
+        Wallet wallet = walletRepo.findByIdOptional(id)
+            .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
+        walletService.assertOwnership(wallet);
+        return WalletResponse.from(wallet);
     }
 
     @POST
     @Path("/top-up")
-    public WalletResponse topUp(@Valid TopUpRequest req,
-                                @HeaderParam("X-User-Id") UUID callerId) {
-        assertOwner(req.walletId(), callerId);
+    @RolesAllowed({"USER", "ADMIN"})
+    public WalletResponse topUp(@Valid TopUpRequest req) {
         return walletService.topUp(req);
     }
 
     @POST
     @Path("/transfer")
-    public TransferResponse transfer(@Valid TransferRequest req,
-                                     @HeaderParam("X-User-Id") UUID callerId) {
-        assertOwner(req.fromWalletId(), callerId);
+    @RolesAllowed({"USER", "ADMIN"})
+    public TransferResponse transfer(@Valid TransferRequest req) {
         return walletService.transfer(req);
     }
 
     @GET
     @Path("/{id}/entries")
+    @RolesAllowed({"USER", "ADMIN"})
     public List<LedgerEntryResponse> getEntries(@PathParam("id") UUID id) {
         Wallet wallet = walletRepo.findByIdOptional(id)
             .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
+        walletService.assertOwnership(wallet);
         if (wallet.ledgerAccountId == null) {
             return List.of();
         }
@@ -92,6 +132,7 @@ public class WalletResource {
 
     @POST
     @Path("/{id}/freeze")
+    @RolesAllowed("ADMIN")
     @Transactional
     public WalletResponse freeze(@PathParam("id") UUID id) {
         return walletService.freeze(id);
@@ -99,6 +140,7 @@ public class WalletResource {
 
     @POST
     @Path("/{id}/unfreeze")
+    @RolesAllowed("ADMIN")
     @Transactional
     public WalletResponse unfreeze(@PathParam("id") UUID id) {
         return walletService.unfreeze(id);
@@ -106,28 +148,32 @@ public class WalletResource {
 
     @GET
     @Path("/recent-recipients")
-    public List<RecentRecipientResponse> recentRecipients(@QueryParam("userId") UUID userId,
-                                                          @QueryParam("limit") @DefaultValue("5") int limit) {
-        if (userId == null) throw new BadRequestException("userId is required");
-        return walletRepo.findRecentRecipients(userId, Math.min(limit, 10));
+    @RolesAllowed({"USER", "ADMIN"})
+    public List<RecentRecipientResponse> recentRecipients(@QueryParam("limit") @DefaultValue("5") int limit) {
+        return walletRepo.findRecentRecipients(currentUser.id(), Math.min(limit, 10));
     }
 
+    // SSE: the browser EventSource API cannot send an Authorization header, so the JWT
+    // arrives as a query param and is verified here manually (endpoint is @PermitAll).
     @GET
     @Path("/{id}/stream")
+    @PermitAll
+    @Blocking
     @Produces(MediaType.SERVER_SENT_EVENTS)
     @RestStreamElementType(MediaType.APPLICATION_JSON)
-    public Multi<String> stream(@PathParam("id") UUID id) {
-        // No blocking DB call here — returns Multi directly on the IO thread.
-        // Unknown wallet IDs simply never receive events, which is safe.
-        return walletEventBus.subscribe(id);
-    }
-
-    private void assertOwner(UUID walletId, UUID callerId) {
-        if (callerId == null) return; // header absent → unauthenticated; defer to future auth layer
-        Wallet wallet = walletRepo.findByIdOptional(walletId)
-            .orElseThrow(() -> new NotFoundException("Wallet not found: " + walletId));
-        if (!callerId.equals(wallet.userId)) {
+    public Multi<String> stream(@PathParam("id") UUID id, @QueryParam("token") String token) {
+        JsonWebToken jwt;
+        try {
+            jwt = jwtParser.parse(token);
+        } catch (Exception e) {
+            throw new NotAuthorizedException("Invalid or missing token", "Bearer");
+        }
+        Wallet wallet = walletRepo.findByIdOptional(id)
+            .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
+        boolean admin = jwt.getGroups() != null && jwt.getGroups().contains("ADMIN");
+        if (!admin && !wallet.userId.equals(UUID.fromString(jwt.getSubject()))) {
             throw new ForbiddenException("Wallet does not belong to caller");
         }
+        return walletEventBus.subscribe(id);
     }
 }

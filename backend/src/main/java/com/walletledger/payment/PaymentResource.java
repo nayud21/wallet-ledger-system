@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.walletledger.payment.dto.PaymentEventResponse;
 import com.walletledger.payment.dto.WebhookRequest;
 import com.walletledger.shared.PageResponse;
+import jakarta.annotation.security.PermitAll;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
@@ -25,6 +27,7 @@ public class PaymentResource {
 
     @POST
     @Path("/webhook")
+    @PermitAll
     @Transactional
     public Response receiveWebhook(@Valid WebhookRequest request) {
         if (repository.existsByProviderAndExternalRef(request.provider(), request.externalRef())) {
@@ -46,6 +49,7 @@ public class PaymentResource {
 
     @GET
     @Path("/events")
+    @RolesAllowed("ADMIN")
     public PageResponse<PaymentEventResponse> listEvents(
             @QueryParam("page") @DefaultValue("0") int page,
             @QueryParam("size") @DefaultValue("20") int size,

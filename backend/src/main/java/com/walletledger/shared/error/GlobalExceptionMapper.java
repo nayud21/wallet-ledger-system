@@ -4,6 +4,7 @@ import com.walletledger.shared.exception.*;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
@@ -23,6 +24,7 @@ public class GlobalExceptionMapper implements ExceptionMapper<Throwable> {
         WalletNotActiveException.class,     new ErrorDef(422, "Wallet Not Active"),
         IdempotencyConflictException.class, new ErrorDef(409, "Idempotency Conflict"),
         AlreadyReversedException.class,     new ErrorDef(422, "Already Reversed"),
+        RateLimitedException.class,         new ErrorDef(429, "Too Many Requests"),
         NotFoundException.class,            new ErrorDef(404, "Not Found"),
         BadRequestException.class,          new ErrorDef(400, "Bad Request")
     );
@@ -41,6 +43,15 @@ public class GlobalExceptionMapper implements ExceptionMapper<Throwable> {
                 ErrorDef def = entry.getValue();
                 return problem(def.status(), def.title(), ex.getMessage());
             }
+        }
+        // JAX-RS security/client errors (401 NotAuthorized, 403 Forbidden, 409 ClientError...)
+        // carry their own status; honor it instead of masking as 500.
+        if (ex instanceof WebApplicationException wae && wae.getResponse() != null) {
+            int status = wae.getResponse().getStatus();
+            String title = Response.Status.fromStatusCode(status) != null
+                ? Response.Status.fromStatusCode(status).getReasonPhrase()
+                : "Error";
+            return problem(status, title, ex.getMessage());
         }
         return problem(500, "Internal Server Error", "An unexpected error occurred");
     }

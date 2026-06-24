@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>16 · JWT Auth, RBAC & BOLA — Wallet Ledger</title>
+<style>
+  :root { --ink:#1e293b; --muted:#64748b; --line:#e2e8f0; --accent:#4f46e5; --bg:#f8fafc;
+          --code-bg:#0f172a; --code-ink:#e2e8f0; --warn:#b45309; --warn-bg:#fffbeb; --ok:#047857; --ok-bg:#ecfdf5; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-size:26px; line-height:1.25; margin:0 0 4px; }
+  h2 { font-size:19px; margin:34px 0 10px; padding-top:14px; border-top:1px solid var(--line); }
+  h3 { font-size:15px; margin:20px 0 6px; color:var(--accent); }
+  p, li { color:#334155; }
+  code { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:13px; background:#eef2ff; color:#3730a3; padding:1px 5px; border-radius:4px; }
+  pre { background:var(--code-bg); color:var(--code-ink); padding:14px 16px; border-radius:8px; overflow-x:auto; font-size:12.5px; line-height:1.55; }
+  pre code { background:none; color:inherit; padding:0; }
+  .lead { color:var(--muted); font-size:15px; margin-top:0; }
+  .tag { display:inline-block; font-size:11px; font-weight:600; color:var(--accent); background:#eef2ff; border-radius:999px; padding:2px 10px; margin-bottom:14px; }
+  .box { border-radius:8px; padding:12px 16px; margin:14px 0; border:1px solid; }
+  .why { background:#f5f3ff; border-color:#ddd6fe; }
+  .warn { background:var(--warn-bg); border-color:#fde68a; }
+  .warn b { color:var(--warn); }
+  .ok { background:var(--ok-bg); border-color:#a7f3d0; }
+  .ok b { color:var(--ok); }
+  table { border-collapse:collapse; width:100%; margin:14px 0; font-size:13.5px; }
+  th, td { border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top; }
+  th { background:#f1f5f9; }
+  .crumbs { font-size:12.5px; color:var(--muted); margin-bottom:18px; }
+  .crumbs a { color:var(--accent); text-decoration:none; }
+  footer { margin-top:40px; padding-top:14px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <div class="crumbs"><a href="README.md">learning-notes</a> / 16 · JWT Auth</div>
+  <span class="tag">Phase E · Security</span>
+  <h1>JWT Authentication, RBAC &amp; BOLA</h1>
+  <p class="lead">How a wallet API knows <em>who you are</em> (authentication) and <em>what you're allowed to do</em> (authorization),
+  without trusting anything the client claims about itself. Based on how Phase E was actually implemented in this repo.</p>
+
+  <h2>1. The big picture</h2>
+  <p>Three separate questions — don't conflate them:</p>
+  <table>
+    <tr><th>Question</th><th>Concept</th><th>Mechanism in this project</th></tr>
+    <tr><td>Who are you?</td><td><b>Authentication</b></td><td>RSA-signed JWT, signature verified on every request</td></tr>
+    <tr><td>What group are you in?</td><td><b>Authorization (RBAC)</b></td><td><code>@RolesAllowed("USER"/"ADMIN")</code></td></tr>
+    <tr><td>Do you own <em>this specific resource</em>?</td><td><b>BOLA</b></td><td><code>WalletService.assertOwnership()</code></td></tr>
+  </table>
+  <div class="box why"><b>Why separate RBAC and BOLA?</b> RBAC only answers "may a USER call <code>/wallets/{id}</code>" — it does
+  <em>not</em> know whether wallet <code>{id}</code> is yours. With RBAC alone, a perfectly authenticated user A could read user B's wallet.
+  That's the <b>BOLA</b> vulnerability (Broken Object Level Authorization) — #1 in the OWASP API Security Top 10.</p></div>
+
+  <h2>2. What a JWT is &amp; why we chose it</h2>
+  <p>A JWT is a 3-part string <code>header.payload.signature</code> (base64url), e.g.:</p>
+  <pre><code>eyJhbGciOiJSUzI1NiJ9 . eyJzdWIiOiI3ZTJl...IiwiZ3JvdXBzIjpbIlVTRVIiXX0 . &lt;RSA signature&gt;</code></pre>
+  <ul>
+    <li><b>Stateless</b>: the server keeps no session. Everything needed (who, role, expiry) lives in the token and is <em>signed</em>, so it can't be tampered with.</li>
+    <li><b>Self-issued</b>: the project signs tokens with its own RSA key pair — no external IdP (Keycloak/Auth0) needed for the MVP.</li>
+    <li><b>Verified with the public key</b>: only the private key can sign; anyone can verify with the public key → the server trusts the token without a DB lookup.</li>
+  </ul>
+
+  <h3>Claims the project issues</h3>
+  <pre><code>// AuthService.issueToken()
+Jwt.issuer("wallet-ledger")
+   .subject(user.id.toString())   // sub  → user identity (UUID)
+   .upn(user.username)            // upn  → display name
+   .groups(Set.of(user.role))     // groups → role: ["USER"] or ["ADMIN"]
+   .claim("email", user.email)
+   .expiresIn(Duration.ofHours(1))// exp  → token lives 1 hour
+   .sign();                       // signs with smallrye.jwt.sign.key.location</code></pre>
+  <div class="box why"><b>Identity comes FROM the token, never from the request.</b> The backend reads the user id via
+  <code>jwt.getSubject()</code> (wrapped in <code>CurrentUser</code>), <u>never</u> from a query param or a hand-rolled header.
+  Before Phase E the project used an <code>X-User-Id</code> header — anyone could forge it. Phase E removed it entirely.
+  The rule: <em>never trust the client to tell you who it is.</em></p></div>
+
+  <h2>3. The RSA key pair — and a security trap</h2>
+  <pre><code>openssl genrsa -out privateKey.pem 2048
+openssl rsa -in privateKey.pem -pubout -out publicKey.pem</code></pre>
+  <pre><code># application.properties
+mp.jwt.verify.publickey.location=publicKey.pem   # verify
+mp.jwt.verify.issuer=wallet-ledger
+smallrye.jwt.sign.key.location=privateKey.pem     # sign</code></pre>
+  <div class="box warn"><b>The trap:</b> in Quarkus, <code>src/main/resources/META-INF/resources/</code> is the <b>static web root</b> —
+  every file there is served publicly over HTTP. Put <code>privateKey.pem</code> there and anyone can download it at
+  <code>http://host/privateKey.pem</code> → the whole auth system collapses.
+  <br>→ This project keeps the keys at the <b>classpath root</b> (<code>src/main/resources/</code>), gitignores the private key, and commits
+  only the public key. Verify with: <code>curl -i localhost:8080/privateKey.pem</code> must return <b>404</b>.</p></div>
+
+  <h2>4. RBAC — <code>@RolesAllowed</code></h2>
+  <p>Two roles: <code>USER</code> (end user) and <code>ADMIN</code> (back-office). Each endpoint declares who may enter:</p>
+  <table>
+    <tr><th>Endpoint</th><th>Access</th></tr>
+    <tr><td><code>POST /auth/register</code>, <code>/login</code></td><td><code>@PermitAll</code></td></tr>
+    <tr><td><code>GET /wallets/me</code>, <code>/me/transactions</code></td><td><code>USER</code></td></tr>
+    <tr><td><code>POST /wallets/top-up</code>, <code>/transfer</code>, <code>GET /wallets/{id}</code></td><td><code>USER, ADMIN</code> + BOLA</td></tr>
+    <tr><td><code>GET /wallets</code> (list-all), <code>/ledger/**</code>, <code>/statements/**</code></td><td><code>ADMIN</code></td></tr>
+    <tr><td><code>POST /payment/webhook</code></td><td><code>@PermitAll</code> (HMAC-verified, NO role)</td></tr>
+  </table>
+  <div class="box warn"><b>Important:</b> if an endpoint has <em>no</em> annotation, it is <b>open</b> by default (no auth required).
+  So every resource must declare its access explicitly — even <code>@PermitAll</code> — so nothing is left accidentally exposed.</p></div>
+
+  <h2>5. BOLA — ownership check at the service layer</h2>
+  <pre><code>// WalletService
+public void assertOwnership(Wallet wallet) {
+    if (currentUser.isAdmin()) return;                 // admins bypass
+    if (!wallet.userId.equals(currentUser.id()))
+        throw new ForbiddenException("Wallet does not belong to caller");
+}</code></pre>
+  <ul>
+    <li>Call <code>assertOwnership</code> after <em>loading</em> the wallet, before reading/mutating: in <code>topUp</code>, <code>getWallet</code>, <code>getEntries</code>…</li>
+    <li><b>Transfer checks the SOURCE wallet only.</b> You may receive money from anyone; you only have to prove you own the debited wallet.</li>
+    <li>Put it in the <b>service layer</b> (not the resource) so every entry path goes through the same guard.</li>
+  </ul>
+
+  <div class="box warn"><b>War story #1 — the "Send money" screen.</b> The transfer screen needs to look up the <em>recipient</em> wallet to show its currency.
+  It first called <code>GET /wallets/{id}</code> — but that endpoint is BOLA-only → it returned <b>403</b> because the recipient wallet isn't owned by the sender.
+  <br>→ Fix: add <code>GET /wallets/{id}/recipient</code> for any authenticated user, but returning <u>minimal info only</u>
+  (<code>id, currency, status</code>) — <b>no balance, no owner</b>. Lesson: "public lookup" and "reading private data" are different needs that deserve different endpoints with different exposure levels.</p></div>
+
+  <div class="box warn"><b>War story #2 — SSE can't carry the token.</b> The realtime endpoint <code>/wallets/{id}/stream</code> (Server-Sent Events)
+  returned a flood of 401s. Reason: the browser <code>EventSource</code> API <b>cannot set an <code>Authorization</code> header</b>.
+  <br>→ Fix: pass the JWT as a query param <code>?token=...</code>, mark the endpoint <code>@PermitAll</code>, then verify it manually with <code>JWTParser</code>
+  and check ownership by hand. Trade-off: the token leaks into the URL (access logs/history) — acceptable for realtime; production should use a short-lived, stream-scoped token.</p></div>
+
+  <h2>6. Passwords — bcrypt, never plaintext</h2>
+  <pre><code>BcryptUtil.bcryptHash(plain, 12);     // hash, cost factor 12
+BcryptUtil.matches(plain, storedHash); // verify</code></pre>
+  <ul>
+    <li><b>One-way</b>: only the hash is stored; nobody (not even an admin/DB) can recover the password. Forgotten = must reset.</li>
+    <li><b>Cost 12</b>: bcrypt is deliberately slow (~tens of ms) to resist brute-force. Higher cost = slower = safer.</li>
+    <li><b>Per-hash salt</b>: each hash is different yet still verifies — defeats rainbow tables.</li>
+    <li><code>password_hash</code> is <b>nullable</b>: users created before Phase E have a NULL hash → login is rejected until a password is set.</li>
+  </ul>
+  <div class="box ok"><b>Don't reveal why login failed.</b> "Email not found" and "wrong password" return the <u>same message and same 401</u>.
+  Distinguishing them lets an attacker discover which emails are registered (user enumeration).</p></div>
+
+  <h2>7. Returning the right error (401 vs 403)</h2>
+  <table>
+    <tr><th>Status</th><th>Meaning</th><th>When</th></tr>
+    <tr><td><b>401</b> Unauthorized</td><td>"I don't know who you are"</td><td>Missing / invalid / expired token</td></tr>
+    <tr><td><b>403</b> Forbidden</td><td>"I know you, but no"</td><td>Wrong role, or BOLA fail (not your wallet)</td></tr>
+    <tr><td><b>429</b> Too Many Requests</td><td>"Slow down"</td><td>Login rate limit exceeded → see note 17</td></tr>
+  </table>
+  <div class="box warn"><b>Bug we hit:</b> <code>GlobalExceptionMapper</code> is an <code>ExceptionMapper&lt;Throwable&gt;</code> (catches EVERYTHING).
+  <code>ForbiddenException</code> wasn't in the lookup table → it fell through to the default <b>500</b>. We had to add 401/403/429 to the map,
+  plus a fallback that reads a <code>WebApplicationException</code>'s status — otherwise authorization failures surface as "server error".</p></div>
+
+  <h2>8. Full flow (one top-up request)</h2>
+  <pre><code>1. Client: POST /auth/login {usernameOrEmail, password}
+2. Server: bcrypt.matches → sign JWT (sub=userId, groups=[USER]) → return accessToken
+3. Client: store token (localStorage), attach "Authorization: Bearer &lt;token&gt;" to every request
+4. POST /wallets/top-up
+   ├─ Quarkus verifies signature + issuer + exp  → 401 if broken
+   ├─ @RolesAllowed("USER","ADMIN")               → 403 if wrong role
+   ├─ WalletService.assertOwnership(wallet)       → 403 if not owned
+   └─ perform double-entry + audit(performed_by = jwt.sub)</code></pre>
+
+  <footer>
+    Related: <code>05_bola_authorization.md</code> · <code>10_auth_future.md</code> (original plan, now realized) ·
+    <code>11_server_sent_events.md</code> · <code>17_login_rate_limiting.html</code>.<br>
+    Code: <code>com.walletledger.auth.*</code>, <code>WalletService.assertOwnership</code>, <code>GlobalExceptionMapper</code>, migration <code>V10</code>.
+  </footer>
+</main>
+</body>
+</html>

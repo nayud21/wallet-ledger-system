@@ -218,3 +218,28 @@ erDiagram
 **Sprint 4 (Weeks 7–8): Background jobs, AI tooling, DevOps.** Webhook inbox pattern. Husky pre-push hooks plus AI-assisted review (Claude Code / Copilot). README polish.
 
 **Sprint 5–6 (Weeks 9–12): User-facing app (Phase E).** JWT auth, BOLA enforcement, user-scoped endpoints, consumer UI (dashboard, send money, transaction history). See [`docs/plans/PHASE_E_user_facing.md`](plans/PHASE_E_user_facing.md).
+
+**Sprint 7+ (Phase F): Event streaming with Kafka.** Learning-driven. Replace the in-memory event bus and the polling webhook inbox with Kafka. Build the Transactional Outbox + idempotent consumers, then upgrade the transport to Debezium CDC. See [`docs/plans/PHASE_F_event_streaming.md`](plans/PHASE_F_event_streaming.md).
+
+---
+
+## Auth (Phase E) ✅
+
+- **Mechanism:** SmallRye JWT, RSA self-issued (no external IdP). Public key verifies, private key signs; both at classpath root (`src/main/resources/`), private key gitignored. Config: `mp.jwt.verify.publickey.location`, `mp.jwt.verify.issuer=wallet-ledger`, `smallrye.jwt.sign.key.location`.
+- **Roles:** `USER`, `ADMIN` (column `users.role`, CHECK-constrained). `users.status` ∈ `ACTIVE`/`SUSPENDED`. `users.password_hash` is bcrypt (cost 12), nullable for legacy rows (cannot log in until set).
+- **Token claims:** `sub`=user UUID, `upn`=username, `groups`=[role], `email`, `exp`=now+1h.
+- **Endpoints:** `POST /api/v1/auth/register`, `POST /api/v1/auth/login` (`@PermitAll`), `GET /api/v1/auth/me`. User-scoped: `GET /api/v1/wallets/me`, `GET /api/v1/wallets/me/transactions`.
+- **Authorization:** `@RolesAllowed` on every resource; admin-only for cross-user/list/ledger/reconciliation/payment-events; webhook stays `@PermitAll` (HMAC). BOLA enforced in `WalletService.assertOwnership` (admins bypass; transfer checks source ownership only).
+- **Rate limiting:** in-memory per-IP fixed window on `/login` (10/min) → 429. Swap for Redis when scaling horizontally.
+- **Schema:** migration `V10__add_user_auth.sql`. Migration map (V1–V10) is the source of truth; never edit a committed migration.
+
+---
+
+## Event Streaming (Phase F) — planned
+
+- **Mechanism:** Apache Kafka via Quarkus SmallRye Reactive Messaging (`quarkus-messaging-kafka`); Dev Services for Kafka in dev/test. Learning-driven phase — wallet/ledger domain used to practice ordering, delivery semantics, the dual-write problem, and idempotent consumers.
+- **Topics:** `wallet-events` (SSE fan-out, keyed by `walletId`), authoritative `ledger.transaction.committed` (via Outbox), `payment.webhooks.raw` + `payment.webhooks.dlt`.
+- **Core pattern:** **Transactional Outbox** — write an `outbox` row in the same DB transaction as `ledger_entries`; a Polling Publisher (F2) then Debezium CDC (F4) ship rows to Kafka. Kafka is the event log, **not** the system of record; Postgres stays source of truth.
+- **Invariants preserved:** partition key = aggregate id for per-wallet ordering; consumers idempotent (reuse `idempotency_keys`) since delivery is at-least-once; `ledger_entries` stays append-only.
+- **Schema:** new migration `V11__add_outbox.sql` (Phase F starts at V11; never edit a committed migration).
+- **Full plan:** [`docs/plans/PHASE_F_event_streaming.md`](plans/PHASE_F_event_streaming.md) (sub-phases F1–F5, each independently shippable).

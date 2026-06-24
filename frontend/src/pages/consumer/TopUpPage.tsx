@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import { useWallets, useTopUp } from '../../hooks/useWallets';
+import { useMyWallets, useTopUp } from '../../hooks/useWallets';
 import { useToast } from '../../context/ToastContext';
 import ConsumerLayout from '../../components/consumer/ConsumerLayout';
 import type { WalletResponse } from '../../types/api';
@@ -382,12 +381,11 @@ function SuccessScreen({ wallet, amount, externalRef, idempotencyKey, onTopUpAga
 
 /* ── TopUpPage ──────────────────────────────────────────── */
 export default function TopUpPage() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const toast = useToast();
 
-  const { data: wallets, isLoading } = useWallets(user!.id);
+  const { data: wallets, isLoading } = useMyWallets();
   const topUp = useTopUp();
 
   const preselectedId = searchParams.get('walletId') ?? '';

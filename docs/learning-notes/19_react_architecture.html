@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>19 · React Architecture — Wallet Ledger</title>
+<style>
+  :root { --ink:#1e293b; --muted:#64748b; --line:#e2e8f0; --accent:#0ea5e9; --bg:#f8fafc;
+          --code-bg:#0f172a; --code-ink:#e2e8f0; --warn:#b45309; --warn-bg:#fffbeb; --ok:#047857; --ok-bg:#ecfdf5; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:880px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-size:26px; line-height:1.25; margin:0 0 4px; }
+  h2 { font-size:19px; margin:34px 0 10px; padding-top:14px; border-top:1px solid var(--line); }
+  h3 { font-size:15px; margin:20px 0 6px; color:var(--accent); }
+  p, li { color:#334155; }
+  code { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:13px; background:#e0f2fe; color:#075985; padding:1px 5px; border-radius:4px; }
+  pre { background:var(--code-bg); color:var(--code-ink); padding:14px 16px; border-radius:8px; overflow-x:auto; font-size:12.5px; line-height:1.55; }
+  pre code { background:none; color:inherit; padding:0; }
+  .lead { color:var(--muted); font-size:15px; margin-top:0; }
+  .tag { display:inline-block; font-size:11px; font-weight:600; color:var(--accent); background:#e0f2fe; border-radius:999px; padding:2px 10px; margin-bottom:14px; }
+  .box { border-radius:8px; padding:12px 16px; margin:14px 0; border:1px solid; }
+  .why { background:#eff6ff; border-color:#bfdbfe; }
+  .warn { background:var(--warn-bg); border-color:#fde68a; }
+  .warn b { color:var(--warn); }
+  .ok { background:var(--ok-bg); border-color:#a7f3d0; }
+  .ok b { color:var(--ok); }
+  .trade { background:#fff7ed; border-color:#fed7aa; }
+  table { border-collapse:collapse; width:100%; margin:14px 0; font-size:13.5px; }
+  th, td { border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top; }
+  th { background:#f1f5f9; }
+  .crumbs { font-size:12.5px; color:var(--muted); margin-bottom:18px; }
+  .crumbs a { color:var(--accent); text-decoration:none; }
+  .diagram { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px; overflow-x:auto; }
+  .diagram pre { background:none; color:var(--ink); font-size:12px; }
+  footer { margin-top:40px; padding-top:14px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <div class="crumbs"><a href="README.md">learning-notes</a> / 19 · React Architecture</div>
+  <span class="tag">Architecture · Frontend</span>
+  <h1>React Architecture — What This Repo Teaches</h1>
+  <p class="lead">A guided tour of every React/TypeScript concept actually applied in <code>frontend/</code>, with the real file paths,
+  the reasoning, and the trade-offs. Read top-to-bottom as a learning path, then open the referenced files to see each idea in code.</p>
+
+  <h2>0. The stack</h2>
+  <p>React 18 + TypeScript + Vite + Tailwind + TanStack Query + React Router. The single most important architectural decision is the
+  <b>split between server state and client state</b> — internalize §2 first.</p>
+
+  <h2>1. Folder layout — by responsibility</h2>
+  <div class="diagram"><pre>frontend/src
+├── api/        ← one file per resource: thin fetch wrappers (wallets.ts, auth.ts, ...)
+│   └── client.ts   ← the ONE fetch() with auth + error handling
+├── hooks/      ← TanStack Query hooks: useWallets, useLedger, useWalletStream
+├── context/    ← cross-cutting client state: AuthContext, ToastContext
+├── pages/      ← route-level screens (consumer/ + admin)
+├── components/ ← presentational + feature widgets (ui/, wallets/, ledger/, consumer/)
+├── types/      ← api.ts — shared TS types mirroring backend DTOs
+└── utils/      ← pure functions: format money, cashflow, balance series</pre></div>
+  <div class="box why"><b>Why separate <code>api/</code>, <code>hooks/</code>, and <code>components/</code>?</b> Each has one job: <code>api/</code>
+  knows the URL shape, <code>hooks/</code> owns caching/invalidation, components only render. You can change the fetch layer without touching a
+  component, and test a hook without a server. <b>Trade-off:</b> more files / indirection for tiny features — worth it once the app has many screens.</p></div>
+
+  <h2>2. Server state vs client state — the core idea</h2>
+  <table>
+    <tr><th>Kind of state</th><th>Examples here</th><th>Tool</th></tr>
+    <tr><td><b>Server state</b> (owned by backend, async, can go stale)</td><td>wallets, transactions, ledger entries</td><td>TanStack Query (<code>useQuery</code>/<code>useMutation</code>)</td></tr>
+    <tr><td><b>Client state</b> (owned by UI, synchronous)</td><td>logged-in user, toasts, form inputs, open modal</td><td>React <code>useState</code> + Context</td></tr>
+  </table>
+  <div class="box why"><b>Why not put server data in <code>useState</code>/Redux?</b> Server data needs caching, background refetch, dedup, loading/error
+  states, staleness — TanStack Query gives all of that for free. Hand-rolling it with <code>useEffect + fetch</code> means reinventing a cache (badly)
+  and causes race conditions & waterfalls. <b>Trade-off:</b> a new mental model (query keys, staleness) to learn. (Project rule:
+  <em>all server state goes through TanStack Query — no <code>useEffect + fetch</code></em>.)</p></div>
+
+  <h2>3. The query layer (hooks/) — applied patterns</h2>
+  <pre><code>// hooks/useWallets.ts
+export function useMyWallets() {
+  return useQuery({ queryKey: ['myWallets'], queryFn: fetchMyWallets });
+}
+
+export function useWallet(id: string | null) {
+  return useQuery({
+    queryKey: ['wallets', id],
+    queryFn: () =&gt; fetchWallet(id!),
+    enabled: !!id,            // ← don't fire until we have an id
+  });
+}
+
+export function useTransfer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: TransferRequest) =&gt; transferWallet(req),
+    onSuccess: () =&gt; {       // ← invalidate → automatic refetch of fresh data
+      qc.invalidateQueries({ queryKey: ['myWallets'] });
+      qc.invalidateQueries({ queryKey: ['myTransactions'] });
+      qc.invalidateQueries({ queryKey: ['recentRecipients'] });
+    },
+  });
+}</code></pre>
+  <ul>
+    <li><b>Query keys</b> are the cache identity — <code>['wallets', id]</code> caches per-wallet independently.</li>
+    <li><b>The <code>enabled</code> flag</b> = conditional/dependent queries: skip the fetch until inputs exist.</li>
+    <li><b>Invalidation after mutation</b> = the write/read sync model: you mutate, then tell the cache "this data is stale", and Query refetches. No manual state copying.</li>
+    <li><b><code>staleTime</code></b> (e.g. <code>walletStats</code>) trades freshness for fewer requests.</li>
+  </ul>
+  <div class="box trade"><b>Trade-off (invalidate-everything):</b> blunt invalidation refetches more than strictly necessary. The alternative —
+  <em>optimistic updates / manual cache writes</em> — is faster but far more code and easy to get wrong. This repo chose simplicity. See
+  <a href="12_tanstack_query_patterns.md">note 12</a>.</div>
+
+  <h2>4. The fetch layer (api/client.ts) — one door in/out</h2>
+  <pre><code>export async function apiFetch&lt;T&gt;(path: string, options?: RequestInit): Promise&lt;T&gt; {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const res = await fetch(path, {
+    headers: { 'Content-Type': 'application/json',
+               ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    ...options,
+  });
+  if (res.status === 401) { /* drop token, bounce to /login */ }
+  if (!res.ok) { /* parse RFC7807 .detail → throw Error(message) */ }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise&lt;T&gt;;
+}</code></pre>
+  <div class="box why"><b>Why funnel every call through one function?</b> Auth header injection, 401→login redirect, and error-shape parsing
+  live in exactly one place. Every <code>api/*.ts</code> just calls <code>apiFetch</code>. <b>Trade-off:</b> a single global fetch is less
+  flexible than per-call config — fine here because the cross-cutting concerns (auth, errors) genuinely <em>are</em> global.</p></div>
+  <div class="box ok"><b>Generics in action:</b> <code>apiFetch&lt;WalletResponse[]&gt;(...)</code> — TypeScript carries the response type
+  end-to-end, so hooks and components get full autocomplete and compile-time safety against the backend DTO shape (<code>types/api.ts</code>).</div>
+
+  <h2>5. Client state via Context — Auth &amp; Toasts</h2>
+  <pre><code>// context/AuthContext.tsx — decode the JWT on the client to know who's logged in
+function decodeJwt(token: string): AuthUser | null {
+  const claims = JSON.parse(atob(token.split('.')[1]...));
+  return { id: claims.sub, username: claims.upn, role: claims.groups?.[0] ?? 'USER' };
+}
+export function useAuth() {            // custom hook wrapping useContext + a guard
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
+  return ctx;
+}</code></pre>
+  <ul>
+    <li><b>Context API</b> shares <code>user</code>/<code>login</code>/<code>logout</code> without prop-drilling.</li>
+    <li><b>Custom-hook-wraps-context</b> pattern (<code>useAuth</code>) gives a clean API + a runtime guard against using it outside the provider.</li>
+    <li><b>Lazy <code>useState</code> initializer</b> (<code>useState(loadStoredUser)</code>) reads localStorage once, not every render.</li>
+  </ul>
+  <div class="box trade"><b>Trade-off (decode JWT client-side):</b> the client reads claims for UI only (show name/role) and <u>never</u> trusts them
+  for security — the backend re-verifies the signature on every request. Storing the token in <code>localStorage</code> is simple but XSS-exposed;
+  the secure-but-complex alternative is httpOnly cookies. The repo chose localStorage for the MVP.</div>
+
+  <h2>6. Routing &amp; route guards</h2>
+  <pre><code>// App.tsx
+function ProtectedRoute({ children }) {
+  const { user } = useAuth();
+  if (!user) return &lt;Navigate to="/login" replace /&gt;;
+  return &lt;&gt;{children}&lt;/&gt;;
+}
+&lt;Route path="/dashboard" element={&lt;ProtectedRoute&gt;&lt;DashboardPage/&gt;&lt;/ProtectedRoute&gt;} /&gt;</code></pre>
+  <div class="box why"><b>Why a wrapper component for auth?</b> It's declarative — the route tree shows at a glance which screens need auth, and
+  redirect logic isn't copy-pasted into every page. <b>Trade-off:</b> client-side guards are UX only; they are <em>not</em> security
+  (anyone can edit JS). Real protection is the backend's <code>@RolesAllowed</code> + ownership checks — see <a href="16_jwt_auth.html">note 16</a>.</p></div>
+
+  <h2>7. Real-time UI: the <code>useEffect</code> escape hatch (SSE)</h2>
+  <pre><code>// hooks/useWalletStream.ts — useEffect is CORRECT here: subscribing to a non-React system
+useEffect(() =&gt; {
+  const sources = walletIds.map(id =&gt; {
+    const es = new EventSource(`/api/v1/wallets/${id}/stream?token=...`);
+    es.onmessage = (e) =&gt; {
+      const event = JSON.parse(e.data);
+      toast.push({ kind:'success', title:'Transfer received' });
+      queryClient.invalidateQueries({ queryKey: ['myWallets'] });   // ← bridge back into Query
+    };
+    return es;
+  });
+  return () =&gt; sources.forEach(es =&gt; es.close());   // cleanup on unmount
+}, [walletIds.join(',')]);</code></pre>
+  <div class="box why"><b>Why is <code>useEffect</code> right here but banned for fetching?</b> <code>useEffect</code> is for
+  <em>synchronizing with external systems</em> — an <code>EventSource</code> connection is exactly that (subscribe on mount, unsubscribe on cleanup).
+  Plain data fetching is <em>not</em> synchronization, so it belongs to Query. When a live event arrives, we <b>invalidate the relevant query keys</b>
+  so SSE and the cache stay in agreement instead of holding two copies of the truth.</p></div>
+  <div class="box trade"><b>Trade-off:</b> the dep array uses <code>walletIds.join(',')</code> to compare by value (arrays are reference-unstable) and
+  passing the token in the URL is an SSE limitation (<code>EventSource</code> can't set headers). Both are pragmatic compromises documented in the code.</div>
+
+  <h2>8. Component design</h2>
+  <ul>
+    <li><b>ui/</b> — dumb, reusable primitives (<code>Button</code>, <code>Modal</code>, <code>Badge</code>, <code>Pagination</code>): props in, markup out, no data fetching.</li>
+    <li><b>feature folders</b> (<code>wallets/</code>, <code>ledger/</code>, <code>consumer/</code>) — widgets that compose primitives + call hooks.</li>
+    <li><b>pages/</b> — wire hooks to feature components; the only layer that "knows" about a screen.</li>
+    <li><b>utils/</b> — pure functions (<code>format.ts</code>, <code>cashflow.ts</code>): no React, trivially unit-testable.</li>
+  </ul>
+  <div class="box why"><b>Why this presentational/container split?</b> Pure UI components are reusable and easy to reason about; pushing data
+  concerns up to pages keeps them so. <b>Trade-off:</b> sometimes you pass props through a layer ("prop drilling") rather than reach for Context —
+  acceptable for shallow trees.</p></div>
+
+  <h2>9. TypeScript guardrails specific to this repo</h2>
+  <div class="box warn"><b>Never create <code>.js</code> files in <code>frontend/src/</code>.</b> Vite resolves <code>.js</code> before <code>.ts</code>,
+  so a stray <code>.js</code> silently shadows your <code>.ts</code> and breaks imports. Also: <b>don't run <code>tsc -b</code> to verify</b> — it
+  emits <code>.js</code> next to your <code>.ts</code>. Use <code>npm run build</code> (vite) instead. (Project memory rules.)</div>
+
+  <h2>10. Suggested learning path</h2>
+  <p>1) §2 server-vs-client state → 2) <a href="12_tanstack_query_patterns.md">note 12</a> + <code>hooks/useWallets.ts</code> →
+  3) <code>api/client.ts</code> (fetch + generics) → 4) <code>context/AuthContext.tsx</code> (Context + custom hook) →
+  5) <code>App.tsx</code> (routing + guards) → 6) <code>hooks/useWalletStream.ts</code> (the legitimate <code>useEffect</code>) →
+  7) build a small new screen end-to-end: type → api fn → hook → component → page.</p>
+
+  <footer>Wallet Ledger System · React architecture overview · companion to note 12 (TanStack Query) and note 18 (backend architecture).</footer>
+</main>
+</body>
+</html>
