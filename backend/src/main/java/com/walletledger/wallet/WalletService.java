@@ -13,11 +13,13 @@ import com.walletledger.wallet.event.WalletEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
+import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -65,7 +67,7 @@ public class WalletService {
         walletRepo.persist(wallet);
 
         auditLogService.log("wallet", wallet.id.toString(), "CREATE",
-            "{\"userId\":\"" + wallet.userId + "\",\"currency\":\"" + wallet.currency + "\"}",
+            Map.of("userId", wallet.userId, "currency", wallet.currency),
             currentUser.principalName());
 
         return WalletResponse.from(wallet);
@@ -73,37 +75,25 @@ public class WalletService {
 
     @Transactional
     public WalletResponse topUp(TopUpRequest req) {
-        String hash = RequestHasher.hash(req.walletId().toString(), req.amount().toPlainString(), req.currency().toUpperCase());
+        String currency = req.currency().toUpperCase();
+        String hash = RequestHasher.hash(req.walletId().toString(), req.amount().toPlainString(), currency);
 
         // idempotency_keys is the single source of truth for dedup. checkAndGuard returns true
         // if the key already exists with a matching hash (safe replay); throws 409 on hash mismatch.
         if (idempotencyKeyRepo.checkAndGuard(req.idempotencyKey(), hash)) {
-            Wallet wallet = walletRepo.findByIdOptional(req.walletId())
-                .orElseThrow(() -> new NotFoundException("Wallet not found: " + req.walletId()));
-            assertOwnership(wallet);
-            return WalletResponse.from(wallet);
+            return replay(req.walletId());
         }
         Wallet wallet = walletRepo.findByIdForUpdate(req.walletId())
             .orElseThrow(() -> new NotFoundException("Wallet not found: " + req.walletId()));
         assertOwnership(wallet);
-
-        if (!"ACTIVE".equals(wallet.status)) {
-            throw new WalletNotActiveException(wallet.id, wallet.status);
-        }
-        if (!wallet.currency.equals(req.currency().toUpperCase())) {
-            throw new CurrencyMismatchException(wallet.currency, req.currency().toUpperCase());
-        }
+        assertActiveCurrency(wallet, currency);
 
         LedgerAccount settlement = ledgerAccountRepo.findByName("SETTLEMENT_ASSET")
             .orElseThrow(() -> new IllegalStateException("SETTLEMENT_ASSET account missing"));
         LedgerAccount walletAccount = ledgerAccountRepo.findByIdOptional(wallet.ledgerAccountId)
             .orElseThrow(() -> new IllegalStateException("Wallet ledger account missing"));
 
-        LedgerTransaction tx = new LedgerTransaction();
-        tx.idempotencyKey = req.idempotencyKey();
-        tx.description = "TOP_UP:" + wallet.id;
-        ledgerTxRepo.persist(tx);
-        idempotencyKeyRepo.persist(req.idempotencyKey(), hash, "ledger_transaction", String.valueOf(tx.id));
+        LedgerTransaction tx = newTransaction(req.idempotencyKey(), hash, "TOP_UP:" + wallet.id);
 
         // Double-entry: asset side (DEBIT settlement = money enters system), liability side (CREDIT wallet)
         persistEntry(settlement.id, tx.id, "DEBIT", req.amount(), wallet.currency, req.externalRef());
@@ -112,11 +102,10 @@ public class WalletService {
         wallet.availableBalance = wallet.availableBalance.add(req.amount());
         wallet.updatedAt = Instant.now();
 
-        persistSnapshot(wallet, tx.id);
+        snapshotRepo.record(wallet, tx.id);
         walletEvents.fire(new WalletEvent(wallet.id, "CREDIT", req.amount(), wallet.currency, "TOP_UP"));
         auditLogService.log("wallet", wallet.id.toString(), "TOP_UP",
-            "{\"amount\":\"" + req.amount().toPlainString() + "\",\"currency\":\"" + wallet.currency
-            + "\",\"ledgerTxId\":" + tx.id + "}",
+            Map.of("amount", req.amount().toPlainString(), "currency", wallet.currency, "ledgerTxId", tx.id),
             currentUser.principalName());
         return WalletResponse.from(wallet);
     }
@@ -124,41 +113,23 @@ public class WalletService {
     @Transactional
     public TransferResponse transfer(TransferRequest req) {
         if (req.fromWalletId().equals(req.toWalletId())) {
-            throw new jakarta.ws.rs.BadRequestException("Cannot transfer to the same wallet");
+            throw new BadRequestException("Cannot transfer to the same wallet");
         }
-
+        String currency = req.currency().toUpperCase();
         String hash = RequestHasher.hash(req.fromWalletId().toString(), req.toWalletId().toString(),
-            req.amount().toPlainString(), req.currency().toUpperCase());
+            req.amount().toPlainString(), currency);
 
         if (idempotencyKeyRepo.checkAndGuard(req.idempotencyKey(), hash)) {
-            Wallet from = walletRepo.findByIdOptional(req.fromWalletId())
-                .orElseThrow(() -> new NotFoundException("Source wallet not found"));
-            assertOwnership(from);
-            Wallet to = walletRepo.findByIdOptional(req.toWalletId())
-                .orElseThrow(() -> new NotFoundException("Target wallet not found"));
-            return new TransferResponse(WalletResponse.from(from), WalletResponse.from(to));
+            return replayTransfer(req.fromWalletId(), req.toWalletId());
         }
-        // Lock in ascending UUID order to prevent deadlock
-        UUID firstId = req.fromWalletId().compareTo(req.toWalletId()) <= 0
-            ? req.fromWalletId() : req.toWalletId();
-        UUID secondId = req.fromWalletId().compareTo(req.toWalletId()) <= 0
-            ? req.toWalletId() : req.fromWalletId();
 
-        Wallet first = walletRepo.findByIdForUpdate(firstId)
-            .orElseThrow(() -> new NotFoundException("Wallet not found: " + firstId));
-        Wallet second = walletRepo.findByIdForUpdate(secondId)
-            .orElseThrow(() -> new NotFoundException("Wallet not found: " + secondId));
-
-        Wallet from = req.fromWalletId().equals(firstId) ? first : second;
-        Wallet to   = req.fromWalletId().equals(firstId) ? second : first;
+        LockedPair pair = lockInOrder(req.fromWalletId(), req.toWalletId());
+        Wallet from = pair.from();
+        Wallet to = pair.to();
 
         assertOwnership(from);
-
-        if (!"ACTIVE".equals(from.status)) throw new WalletNotActiveException(from.id, from.status);
-        if (!"ACTIVE".equals(to.status)) throw new WalletNotActiveException(to.id, to.status);
-        String currency = req.currency().toUpperCase();
-        if (!from.currency.equals(currency)) throw new CurrencyMismatchException(from.currency, currency);
-        if (!to.currency.equals(currency)) throw new CurrencyMismatchException(to.currency, currency);
+        assertActiveCurrency(from, currency);
+        assertActiveCurrency(to, currency);
         if (from.availableBalance.compareTo(req.amount()) < 0) {
             throw new InsufficientBalanceException(currency, from.availableBalance, req.amount());
         }
@@ -168,11 +139,7 @@ public class WalletService {
         LedgerAccount toAccount = ledgerAccountRepo.findByIdOptional(to.ledgerAccountId)
             .orElseThrow(() -> new IllegalStateException("Target wallet ledger account missing"));
 
-        LedgerTransaction tx = new LedgerTransaction();
-        tx.idempotencyKey = req.idempotencyKey();
-        tx.description = "TRANSFER:" + from.id + "->" + to.id;
-        ledgerTxRepo.persist(tx);
-        idempotencyKeyRepo.persist(req.idempotencyKey(), hash, "ledger_transaction", String.valueOf(tx.id));
+        LedgerTransaction tx = newTransaction(req.idempotencyKey(), hash, "TRANSFER:" + from.id + "->" + to.id);
 
         // DEBIT source liability (we owe source wallet less), CREDIT target liability (we owe target wallet more)
         persistEntry(fromAccount.id, tx.id, "DEBIT", req.amount(), currency, null);
@@ -184,59 +151,31 @@ public class WalletService {
         to.availableBalance = to.availableBalance.add(req.amount());
         to.updatedAt = now;
 
-        persistSnapshot(from, tx.id);
-        persistSnapshot(to, tx.id);
+        snapshotRepo.record(from, tx.id);
+        snapshotRepo.record(to, tx.id);
 
         walletEvents.fire(new WalletEvent(from.id, "DEBIT", req.amount(), currency, "TRANSFER_OUT"));
         walletEvents.fire(new WalletEvent(to.id, "CREDIT", req.amount(), currency, "TRANSFER_IN"));
         auditLogService.log("wallet", from.id.toString(), "TRANSFER_OUT",
-            "{\"toWalletId\":\"" + to.id + "\",\"amount\":\"" + req.amount().toPlainString()
-            + "\",\"currency\":\"" + currency + "\",\"ledgerTxId\":" + tx.id + "}",
+            Map.of("toWalletId", to.id, "amount", req.amount().toPlainString(),
+                "currency", currency, "ledgerTxId", tx.id),
             currentUser.principalName());
         auditLogService.log("wallet", to.id.toString(), "TRANSFER_IN",
-            "{\"fromWalletId\":\"" + from.id + "\",\"amount\":\"" + req.amount().toPlainString()
-            + "\",\"currency\":\"" + currency + "\",\"ledgerTxId\":" + tx.id + "}",
+            Map.of("fromWalletId", from.id, "amount", req.amount().toPlainString(),
+                "currency", currency, "ledgerTxId", tx.id),
             currentUser.principalName());
 
         return new TransferResponse(WalletResponse.from(from), WalletResponse.from(to));
     }
 
-    private void persistEntry(Long accountId, Long txId, String direction,
-                               java.math.BigDecimal amount, String currency, String reference) {
-        LedgerEntry entry = new LedgerEntry();
-        entry.ledgerAccountId = accountId;
-        entry.ledgerTxId = txId;
-        entry.direction = direction;
-        entry.amount = amount;
-        entry.currency = currency;
-        entry.reference = reference;
-        ledgerEntryRepo.persist(entry);
-    }
-
     @Transactional
     public WalletResponse freeze(UUID id) {
-        Wallet wallet = walletRepo.findByIdOptional(id)
-            .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
-        String previous = wallet.status;
-        wallet.status = "FROZEN";
-        wallet.updatedAt = Instant.now();
-        auditLogService.log("wallet", id.toString(), "FREEZE",
-            "{\"previousStatus\":\"" + previous + "\",\"newStatus\":\"FROZEN\"}",
-            currentUser.principalName());
-        return WalletResponse.from(wallet);
+        return changeStatus(id, "FROZEN", "FREEZE");
     }
 
     @Transactional
     public WalletResponse unfreeze(UUID id) {
-        Wallet wallet = walletRepo.findByIdOptional(id)
-            .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
-        String previous = wallet.status;
-        wallet.status = "ACTIVE";
-        wallet.updatedAt = Instant.now();
-        auditLogService.log("wallet", id.toString(), "UNFREEZE",
-            "{\"previousStatus\":\"" + previous + "\",\"newStatus\":\"ACTIVE\"}",
-            currentUser.principalName());
-        return WalletResponse.from(wallet);
+        return changeStatus(id, "ACTIVE", "UNFREEZE");
     }
 
     public WalletStatsResponse getStats() {
@@ -247,12 +186,78 @@ public class WalletService {
         return new WalletStatsResponse(totalWallets, activeWallets, totalVolume24h, pendingEvents);
     }
 
-    private void persistSnapshot(Wallet wallet, Long txId) {
-        WalletBalanceSnapshot snap = new WalletBalanceSnapshot();
-        snap.walletId = wallet.id;
-        snap.availableBalance = wallet.availableBalance;
-        snap.reservedBalance = wallet.reservedBalance;
-        snap.ledgerTxId = txId;
-        snapshotRepo.persist(snap);
+    private WalletResponse changeStatus(UUID id, String newStatus, String action) {
+        Wallet wallet = walletRepo.findByIdOptional(id)
+            .orElseThrow(() -> new NotFoundException("Wallet not found: " + id));
+        String previous = wallet.status;
+        wallet.status = newStatus;
+        wallet.updatedAt = Instant.now();
+        auditLogService.log("wallet", id.toString(), action,
+            Map.of("previousStatus", previous, "newStatus", newStatus),
+            currentUser.principalName());
+        return WalletResponse.from(wallet);
     }
+
+    /** Replay of a top-up: balances already settled, return current state after ownership check. */
+    private WalletResponse replay(UUID walletId) {
+        Wallet wallet = walletRepo.findByIdOptional(walletId)
+            .orElseThrow(() -> new NotFoundException("Wallet not found: " + walletId));
+        assertOwnership(wallet);
+        return WalletResponse.from(wallet);
+    }
+
+    private TransferResponse replayTransfer(UUID fromId, UUID toId) {
+        Wallet from = walletRepo.findByIdOptional(fromId)
+            .orElseThrow(() -> new NotFoundException("Source wallet not found"));
+        assertOwnership(from);
+        Wallet to = walletRepo.findByIdOptional(toId)
+            .orElseThrow(() -> new NotFoundException("Target wallet not found"));
+        return new TransferResponse(WalletResponse.from(from), WalletResponse.from(to));
+    }
+
+    private void assertActiveCurrency(Wallet wallet, String currency) {
+        if (!"ACTIVE".equals(wallet.status)) {
+            throw new WalletNotActiveException(wallet.id, wallet.status);
+        }
+        if (!wallet.currency.equals(currency)) {
+            throw new CurrencyMismatchException(wallet.currency, currency);
+        }
+    }
+
+    /** Lock both wallets for update in ascending UUID order to prevent deadlock, then orient them. */
+    private LockedPair lockInOrder(UUID fromId, UUID toId) {
+        boolean fromFirst = fromId.compareTo(toId) <= 0;
+        UUID firstId = fromFirst ? fromId : toId;
+        UUID secondId = fromFirst ? toId : fromId;
+
+        Wallet first = walletRepo.findByIdForUpdate(firstId)
+            .orElseThrow(() -> new NotFoundException("Wallet not found: " + firstId));
+        Wallet second = walletRepo.findByIdForUpdate(secondId)
+            .orElseThrow(() -> new NotFoundException("Wallet not found: " + secondId));
+
+        return fromFirst ? new LockedPair(first, second) : new LockedPair(second, first);
+    }
+
+    private LedgerTransaction newTransaction(String idempotencyKey, String hash, String description) {
+        LedgerTransaction tx = new LedgerTransaction();
+        tx.idempotencyKey = idempotencyKey;
+        tx.description = description;
+        ledgerTxRepo.persist(tx);
+        idempotencyKeyRepo.persist(idempotencyKey, hash, "ledger_transaction", String.valueOf(tx.id));
+        return tx;
+    }
+
+    private void persistEntry(Long accountId, Long txId, String direction,
+                               BigDecimal amount, String currency, String reference) {
+        LedgerEntry entry = new LedgerEntry();
+        entry.ledgerAccountId = accountId;
+        entry.ledgerTxId = txId;
+        entry.direction = direction;
+        entry.amount = amount;
+        entry.currency = currency;
+        entry.reference = reference;
+        ledgerEntryRepo.persist(entry);
+    }
+
+    private record LockedPair(Wallet from, Wallet to) {}
 }

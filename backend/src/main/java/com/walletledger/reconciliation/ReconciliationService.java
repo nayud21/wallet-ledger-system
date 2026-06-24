@@ -42,65 +42,18 @@ public class ReconciliationService {
         runRepository.persist(run);
 
         List<ExternalStatement> statements = statementRepository.list("statementDate = ?1 AND status = 'PENDING'", date);
-
-        Instant dayStart = date.atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant dayEnd = date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-        List<LedgerEntry> entries = ledgerEntryRepository.list(
-                "createdAt >= ?1 AND createdAt < ?2", dayStart, dayEnd);
+        Map<String, LedgerEntry> entryIndex = buildEntryIndex(date);
 
         int matched = 0;
         int unmatched = 0;
-
-        // Build lookup: (reference, amount, currency) -> ledger entry
-        Map<String, LedgerEntry> entryIndex = new HashMap<>();
-        for (LedgerEntry entry : entries) {
-            if (entry.reference != null) {
-                entryIndex.put(entryKey(entry.reference, entry.amount, entry.currency), entry);
-            }
-        }
-
         for (ExternalStatement statement : statements) {
-            List<StatementLine> lines = parseLines(statement.content);
-            for (StatementLine line : lines) {
-                String key = entryKey(line.reference(), line.amount(), line.currency());
-                LedgerEntry matchedEntry = entryIndex.remove(key);
-                if (matchedEntry != null) {
-                    ReconciliationMatch match = new ReconciliationMatch();
-                    match.reconciliationRun = run;
-                    match.ledgerEntry = matchedEntry;
-                    match.externalStatement = statement;
-                    match.details = toJson(Map.of(
-                            "reference", line.reference(),
-                            "amount", line.amount().toPlainString(),
-                            "currency", line.currency(),
-                            "date", line.date().toString()
-                    ));
-                    matchRepository.persist(match);
-                    matched++;
-                } else {
-                    createException(run, "UNMATCHED_STATEMENT_LINE", Map.of(
-                            "statementId", statement.id,
-                            "reference", line.reference(),
-                            "amount", line.amount().toPlainString(),
-                            "currency", line.currency(),
-                            "date", line.date().toString()
-                    ));
-                    unmatched++;
-                }
-            }
+            MatchCounts counts = reconcileStatement(run, statement, entryIndex);
+            matched += counts.matched();
+            unmatched += counts.unmatched();
             statement.status = "PROCESSED";
         }
-
         // Remaining ledger entries have no matching statement line
-        for (LedgerEntry orphan : entryIndex.values()) {
-            createException(run, "UNMATCHED_LEDGER_ENTRY", Map.of(
-                    "ledgerEntryId", orphan.id,
-                    "reference", orphan.reference != null ? orphan.reference : "",
-                    "amount", orphan.amount.toPlainString(),
-                    "currency", orphan.currency
-            ));
-            unmatched++;
-        }
+        unmatched += flagOrphans(run, entryIndex);
 
         run.summary = toJson(Map.of("matched", matched, "unmatched", unmatched));
         run.status = "COMPLETED";
@@ -108,6 +61,73 @@ public class ReconciliationService {
         LOG.infof("Reconciliation run %d for %s: matched=%d unmatched=%d", run.id, date, matched, unmatched);
         return run;
     }
+
+    /** Index that day's ledger entries by (reference, amount, currency); entries are consumed as matched. */
+    private Map<String, LedgerEntry> buildEntryIndex(LocalDate date) {
+        Instant dayStart = date.atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant dayEnd = date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        List<LedgerEntry> entries = ledgerEntryRepository.list(
+                "createdAt >= ?1 AND createdAt < ?2", dayStart, dayEnd);
+
+        Map<String, LedgerEntry> index = new HashMap<>();
+        for (LedgerEntry entry : entries) {
+            if (entry.reference != null) {
+                index.put(entryKey(entry.reference, entry.amount, entry.currency), entry);
+            }
+        }
+        return index;
+    }
+
+    private MatchCounts reconcileStatement(ReconciliationRun run, ExternalStatement statement,
+                                           Map<String, LedgerEntry> entryIndex) {
+        int matched = 0;
+        int unmatched = 0;
+        for (StatementLine line : parseLines(statement.content)) {
+            LedgerEntry matchedEntry = entryIndex.remove(entryKey(line.reference(), line.amount(), line.currency()));
+            if (matchedEntry != null) {
+                recordMatch(run, statement, matchedEntry, line);
+                matched++;
+            } else {
+                createException(run, "UNMATCHED_STATEMENT_LINE", Map.of(
+                        "statementId", statement.id,
+                        "reference", line.reference(),
+                        "amount", line.amount().toPlainString(),
+                        "currency", line.currency(),
+                        "date", line.date().toString()
+                ));
+                unmatched++;
+            }
+        }
+        return new MatchCounts(matched, unmatched);
+    }
+
+    private void recordMatch(ReconciliationRun run, ExternalStatement statement, LedgerEntry entry, StatementLine line) {
+        ReconciliationMatch match = new ReconciliationMatch();
+        match.reconciliationRun = run;
+        match.ledgerEntry = entry;
+        match.externalStatement = statement;
+        match.details = toJson(Map.of(
+                "reference", line.reference(),
+                "amount", line.amount().toPlainString(),
+                "currency", line.currency(),
+                "date", line.date().toString()
+        ));
+        matchRepository.persist(match);
+    }
+
+    private int flagOrphans(ReconciliationRun run, Map<String, LedgerEntry> entryIndex) {
+        for (LedgerEntry orphan : entryIndex.values()) {
+            createException(run, "UNMATCHED_LEDGER_ENTRY", Map.of(
+                    "ledgerEntryId", orphan.id,
+                    "reference", orphan.reference != null ? orphan.reference : "",
+                    "amount", orphan.amount.toPlainString(),
+                    "currency", orphan.currency
+            ));
+        }
+        return entryIndex.size();
+    }
+
+    private record MatchCounts(int matched, int unmatched) {}
 
     public List<ReconciliationRunResponse> listRuns(int limit) {
         return runRepository.findRecent(limit).stream()

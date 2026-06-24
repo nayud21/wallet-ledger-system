@@ -6,8 +6,6 @@ import com.walletledger.ledger.dto.LedgerTransactionResponse;
 import com.walletledger.ledger.dto.ReversalRequest;
 import com.walletledger.shared.exception.AlreadyReversedException;
 import com.walletledger.shared.util.RequestHasher;
-import com.walletledger.wallet.Wallet;
-import com.walletledger.wallet.WalletBalanceSnapshot;
 import com.walletledger.wallet.WalletBalanceSnapshotRepository;
 import com.walletledger.wallet.WalletRepository;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -16,6 +14,7 @@ import jakarta.ws.rs.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 @ApplicationScoped
 @RequiredArgsConstructor
@@ -56,39 +55,42 @@ public class LedgerService {
         idempotencyKeyRepo.persist(req.idempotencyKey(), hash, "ledger_transaction", String.valueOf(reversal.id));
 
         for (LedgerEntry orig : originalEntries) {
-            LedgerEntry mirror = new LedgerEntry();
-            mirror.ledgerAccountId = orig.ledgerAccountId;
-            mirror.ledgerTxId = reversal.id;
-            mirror.direction = "DEBIT".equals(orig.direction) ? "CREDIT" : "DEBIT";
-            mirror.amount = orig.amount;
-            mirror.currency = orig.currency;
-            mirror.reference = orig.reference;
-            ledgerEntryRepo.persist(mirror);
-
-            // Reflect balance change on the wallet whose liability account is affected
-            walletRepo.findByLedgerAccountId(orig.ledgerAccountId).ifPresent(wallet -> {
-                // mirror.direction is the reversal direction:
-                //   CREDIT in reversal → original was DEBIT → wallet was losing; reversal gives money back
-                //   DEBIT in reversal  → original was CREDIT → wallet was gaining; reversal takes money away
-                if ("CREDIT".equals(mirror.direction)) {
-                    wallet.availableBalance = wallet.availableBalance.add(orig.amount);
-                } else {
-                    wallet.availableBalance = wallet.availableBalance.subtract(orig.amount);
-                }
-                wallet.updatedAt = Instant.now();
-
-                WalletBalanceSnapshot snap = new WalletBalanceSnapshot();
-                snap.walletId = wallet.id;
-                snap.availableBalance = wallet.availableBalance;
-                snap.reservedBalance = wallet.reservedBalance;
-                snap.ledgerTxId = reversal.id;
-                snapshotRepo.persist(snap);
-            });
+            String reversalDirection = mirrorEntry(orig, reversal.id);
+            applyToWallet(orig, reversalDirection, reversal.id);
         }
 
         auditLogService.log("ledger_transaction", String.valueOf(original.id), "REVERSAL",
-            "{\"reversalTxId\":" + reversal.id + ",\"reason\":\"" + req.reason() + "\"}");
+            Map.of("reversalTxId", reversal.id, "reason", req.reason()));
 
         return LedgerTransactionResponse.from(reversal);
+    }
+
+    /** Persist the mirrored entry (flipped direction) and return its reversal direction. */
+    private String mirrorEntry(LedgerEntry orig, Long reversalTxId) {
+        LedgerEntry mirror = new LedgerEntry();
+        mirror.ledgerAccountId = orig.ledgerAccountId;
+        mirror.ledgerTxId = reversalTxId;
+        mirror.direction = "DEBIT".equals(orig.direction) ? "CREDIT" : "DEBIT";
+        mirror.amount = orig.amount;
+        mirror.currency = orig.currency;
+        mirror.reference = orig.reference;
+        ledgerEntryRepo.persist(mirror);
+        return mirror.direction;
+    }
+
+    /** Reflect a reversal entry on the wallet whose liability account it affects, if any. */
+    private void applyToWallet(LedgerEntry orig, String reversalDirection, Long reversalTxId) {
+        walletRepo.findByLedgerAccountId(orig.ledgerAccountId).ifPresent(wallet -> {
+            // reversalDirection is the direction of the mirrored (reversal) entry:
+            //   CREDIT → original was DEBIT → wallet was losing; reversal gives money back
+            //   DEBIT  → original was CREDIT → wallet was gaining; reversal takes money away
+            if ("CREDIT".equals(reversalDirection)) {
+                wallet.availableBalance = wallet.availableBalance.add(orig.amount);
+            } else {
+                wallet.availableBalance = wallet.availableBalance.subtract(orig.amount);
+            }
+            wallet.updatedAt = Instant.now();
+            snapshotRepo.record(wallet, reversalTxId);
+        });
     }
 }
