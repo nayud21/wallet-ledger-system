@@ -1,12 +1,8 @@
 package com.walletledger.wallet.event;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
-import jakarta.enterprise.event.TransactionPhase;
-import lombok.RequiredArgsConstructor;
 
 import java.util.List;
 import java.util.Map;
@@ -14,11 +10,14 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+/**
+ * Pure in-JVM SSE fan-out. It no longer observes WalletEvents directly — the Kafka consumer
+ * ({@link WalletEventConsumer}) is now the event source and calls {@link #fanOut}. This keeps the
+ * SSE delivery in-process while the event transport became Kafka.
+ */
 @ApplicationScoped
-@RequiredArgsConstructor
 public class WalletEventBus {
 
-    private final ObjectMapper mapper;
     private final Map<UUID, List<MultiEmitter<? super String>>> emitters = new ConcurrentHashMap<>();
 
     public Multi<String> subscribe(UUID walletId) {
@@ -31,15 +30,12 @@ public class WalletEventBus {
         });
     }
 
-    // Fires only after the transaction commits — no phantom events on rollback
-    void onWalletEvent(@Observes(during = TransactionPhase.AFTER_SUCCESS) WalletEvent event) {
-        List<MultiEmitter<? super String>> list = emitters.get(event.walletId());
+    /** Push an already-serialized event JSON to every SSE subscriber of this wallet on this node. */
+    public void fanOut(UUID walletId, String json) {
+        List<MultiEmitter<? super String>> list = emitters.get(walletId);
         if (list == null || list.isEmpty()) return;
-        try {
-            String json = mapper.writeValueAsString(event);
-            list.forEach(e -> {
-                try { e.emit(json); } catch (Exception ignored) {}
-            });
-        } catch (Exception ignored) {}
+        list.forEach(e -> {
+            try { e.emit(json); } catch (Exception ignored) {}
+        });
     }
 }

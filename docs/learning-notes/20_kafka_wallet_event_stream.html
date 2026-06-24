@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>20 · Kafka Wallet Event Stream — Wallet Ledger</title>
+<style>
+  :root { --ink:#1e293b; --muted:#64748b; --line:#e2e8f0; --accent:#4f46e5; --bg:#f8fafc;
+          --code-bg:#0f172a; --code-ink:#e2e8f0; --warn:#b45309; --warn-bg:#fffbeb; --ok:#047857; --ok-bg:#ecfdf5; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:880px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-size:26px; line-height:1.25; margin:0 0 4px; }
+  h2 { font-size:19px; margin:34px 0 10px; padding-top:14px; border-top:1px solid var(--line); }
+  h3 { font-size:15px; margin:20px 0 6px; color:var(--accent); }
+  p, li { color:#334155; }
+  code { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:13px; background:#eef2ff; color:#3730a3; padding:1px 5px; border-radius:4px; }
+  pre { background:var(--code-bg); color:var(--code-ink); padding:14px 16px; border-radius:8px; overflow-x:auto; font-size:12.5px; line-height:1.55; }
+  pre code { background:none; color:inherit; padding:0; }
+  .lead { color:var(--muted); font-size:15px; margin-top:0; }
+  .tag { display:inline-block; font-size:11px; font-weight:600; color:var(--accent); background:#eef2ff; border-radius:999px; padding:2px 10px; margin-bottom:14px; }
+  .box { border-radius:8px; padding:12px 16px; margin:14px 0; border:1px solid; }
+  .why { background:#f5f3ff; border-color:#ddd6fe; }
+  .warn { background:var(--warn-bg); border-color:#fde68a; }
+  .warn b { color:var(--warn); }
+  .ok { background:var(--ok-bg); border-color:#a7f3d0; }
+  .ok b { color:var(--ok); }
+  .trade { background:#fff7ed; border-color:#fed7aa; }
+  table { border-collapse:collapse; width:100%; margin:14px 0; font-size:13.5px; }
+  th, td { border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top; }
+  th { background:#f1f5f9; }
+  .crumbs { font-size:12.5px; color:var(--muted); margin-bottom:18px; }
+  .crumbs a { color:var(--accent); text-decoration:none; }
+  .diagram { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px; overflow-x:auto; }
+  .diagram pre { background:none; color:var(--ink); font-size:12px; }
+  footer { margin-top:40px; padding-top:14px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <div class="crumbs"><a href="README.md">learning-notes</a> / 20 · Kafka Wallet Event Stream</div>
+  <span class="tag">Phase F1 · Kafka · SmallRye Messaging</span>
+  <h1>Kafka Wallet Event Stream</h1>
+  <p class="lead">Phase F1 moves the wallet event transport from an in-JVM CDI bus to a Kafka topic, while keeping
+  SSE delivery in-process. This is the deliberately low-risk first step of Phase F: the events are
+  <em>notifications</em>, so the famous dual-write gap (deferred to F2) cannot cause a money bug here.</p>
+
+  <h2>1. What changed</h2>
+  <div class="diagram"><pre>BEFORE (single node)
+  WalletService.fire(WalletEvent) ──CDI AFTER_SUCCESS──▶ WalletEventBus ──▶ SSE subscribers
+
+AFTER (F1)
+  WalletService.fire(WalletEvent)
+        │ CDI AFTER_SUCCESS
+        ▼
+  WalletEventProducer ──Record(key=walletId, json)──▶ [ Kafka topic: wallet-events ]
+                                                              │
+                            every app instance consumes ◀─────┘ (its own group.id)
+        │ @Incoming
+        ▼
+  WalletEventConsumer ──▶ WalletEventBus.fanOut(walletId, json) ──▶ SSE subscribers</pre></div>
+  <p><code>WalletService</code> is unchanged — it still fires the same CDI <code>WalletEvent</code>. We only swapped
+  what listens: a new <code>WalletEventProducer</code> bridges CDI → Kafka, and <code>WalletEventBus</code> shrank to a
+  pure SSE fan-out fed by <code>WalletEventConsumer</code>.</p>
+
+  <h2>2. The three load-bearing concepts</h2>
+
+  <h3>2.1 Partition key ⇄ per-aggregate ordering</h3>
+  <p>Kafka guarantees ordering <b>only within a partition</b>, never across partitions. We key every message by
+  <code>walletId</code> (<code>Record.of(walletId.toString(), json)</code>). All events for one wallet hash to the same
+  partition and are therefore consumed in the order they were produced. This is the single rule that lets a
+  financial event log stay correct on Kafka.</p>
+  <pre><code>// WalletEventProducer
+emitter.send(Record.of(event.walletId().toString(), json));</code></pre>
+
+  <h3>2.2 Consumer-group semantics: broadcast vs. work-queue</h3>
+  <p>A Kafka <b>consumer group</b> splits a topic's partitions across its members — each partition is read by exactly
+  one member (a work-queue). That is the wrong model for SSE fan-out: if instances A and B shared a group, B would
+  own some partitions and A's SSE clients would never see those wallets' events.</p>
+  <div class="box why"><b>Decision:</b> give each instance a <b>unique</b> <code>group.id</code>
+  (<code>wallet-sse-${quarkus.uuid}</code>). Now every instance is its own group of one → every instance reads every
+  partition → every SSE client gets every event. This is the pub/sub <em>broadcast</em> pattern, built out of
+  per-instance groups. We also use <code>auto.offset.reset=latest</code>: a freshly started node only cares about
+  live events, not replaying history to a browser that just connected.</div>
+
+  <h3>2.3 The dual-write problem — why F1 is allowed to ignore it</h3>
+  <p>The producer observes <code>@Observes(during = AFTER_SUCCESS)</code>, so it publishes only after the DB
+  transaction commits. That is still <em>commit-then-publish as two steps</em>: if the JVM dies in the gap, the DB
+  committed but Kafka never got the message.</p>
+  <div class="box warn"><b>This is the dual-write problem.</b> For F1 it only drops a cosmetic SSE ping, so it is
+  acceptable. It is <b>not</b> acceptable for authoritative money events — which is exactly why
+  <b>F2</b> introduces the Transactional Outbox (write the event row <em>inside</em> the same transaction as
+  <code>ledger_entries</code>, publish from there).</div>
+
+  <h2>3. SmallRye Reactive Messaging wiring</h2>
+  <table>
+    <tr><th>Piece</th><th>Annotation / API</th><th>Role</th></tr>
+    <tr><td>Producer</td><td><code>@Channel("wallet-events-out") Emitter&lt;Record&lt;String,String&gt;&gt;</code></td><td>Imperative send with an explicit key</td></tr>
+    <tr><td>Consumer</td><td><code>@Incoming("wallet-events-in")</code></td><td>One method per message; <code>void</code> return = auto-ack</td></tr>
+    <tr><td>Connector</td><td><code>connector=smallrye-kafka</code></td><td>Maps a channel to a Kafka topic</td></tr>
+  </table>
+  <p>Note the injection style: <code>@Channel</code> is placed on a <b>constructor parameter</b>, not a field. The
+  project rule forbids field <code>@Inject</code>; Lombok's <code>@RequiredArgsConstructor</code> can't carry
+  <code>@Channel</code>, so the producer hand-writes its constructor. <code>@Channel</code> is SmallRye's messaging
+  qualifier, not <code>@Inject</code> — so this honours the rule.</p>
+
+  <h2>4. Running it</h2>
+  <table>
+    <tr><th>Mode</th><th>Broker</th></tr>
+    <tr><td><code>quarkus:dev</code> &amp; tests</td><td>Quarkus <b>Dev Services for Kafka</b> auto-starts a container — no config, no install</td></tr>
+    <tr><td>Packaged jar (<code>%prod</code>)</td><td><code>docker-compose up -d</code> → the <code>kafka</code> service at <code>localhost:9092</code></td></tr>
+  </table>
+  <p>We run <b>Apache Kafka in KRaft mode</b> (no ZooKeeper) everywhere, pinned to one image
+  (<code>apache/kafka:4.0.0</code>) for dev, test, and prod so behaviour matches.</p>
+  <div class="box warn"><b>Gotcha hit during F1:</b> Quarkus 3.35's Dev Services configures
+  <code>group.coordinator.rebalance.protocols=share</code> — a Kafka <b>4.0</b> feature (KIP-932 share groups).
+  Pinning the image to <code>apache/kafka:3.8.0</code> made the broker's StorageTool reject that config and the
+  container never started. Fix: use a 4.0+ image. Lesson: Dev Services tracks a specific broker generation; pin a
+  compatible one.</div>
+
+  <h2>5. How it's tested</h2>
+  <p><code>WalletEventStreamTest</code> (a <code>@QuarkusTest</code> against the Dev Services broker) fires
+  <code>WalletEvent</code>s and a test-only consumer (<code>TestWalletEventCollector</code>, its own group, reading
+  <code>earliest</code>) records what actually landed on the topic:</p>
+  <ul>
+    <li><b>Keying + ordering:</b> 50 sequential events for one wallet → every message carries <code>key == walletId</code>, and the sequence is observed in fire order.</li>
+    <li><b>Concurrency (no loss + per-thread order):</b> 4 threads × 25 events for one wallet → all 100 arrive, and because the same key pins them to one partition, each thread's events stay in the order it sent them.</li>
+  </ul>
+
+  <h2>6. Trade-off, in one line</h2>
+  <div class="box trade">We traded an in-memory method call (instant, single-node) for a broker hop
+  (added latency + a Kafka dependency) and bought multi-instance, multi-consumer, replayable delivery. Worth it only
+  because the next steps (F2 outbox, F3 webhook ingestion) need the log; for a pure single-node SSE ping it would be
+  over-engineering.</div>
+
+  <footer>Phase F1 · see <a href="../plans/PHASE_F_event_streaming.md">PHASE_F_event_streaming.md</a> for F2–F5.
+  Files: <code>wallet/event/WalletEventProducer.java</code>, <code>WalletEventConsumer.java</code>,
+  <code>WalletEventBus.java</code>.</footer>
+</main>
+</body>
+</html>

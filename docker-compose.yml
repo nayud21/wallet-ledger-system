@@ -17,5 +17,36 @@ services:
       timeout: 5s
       retries: 10
 
+  # Apache Kafka in KRaft mode (no ZooKeeper) — a single node that is both broker and controller.
+  # Used for full-stack runs (the packaged jar with %prod). In dev/test, Quarkus Dev Services
+  # starts its own Kafka container (pinned to the same image in application.properties).
+  kafka:
+    image: apache/kafka:4.0.0
+    container_name: wallet-ledger-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      # KRaft: this node runs both roles (combined mode), forming a metadata quorum of one.
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Bind PLAINTEXT (clients) on 9092 and CONTROLLER (Raft quorum) on 9093.
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      # Address handed back to clients — must be reachable from the host. Controller is internal-only.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Single-broker dev cluster → internal topics replicate to 1 (prod keeps 3 / min-ISR 2).
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
 volumes:
   postgres_data:

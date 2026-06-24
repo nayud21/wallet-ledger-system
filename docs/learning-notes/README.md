@@ -25,8 +25,9 @@ Notes extracted from building a production-grade Wallet + Double-Entry Ledger sy
 | [17](17_login_rate_limiting.html) | **Login Rate Limiting** 🔑 | Fixed-window per-IP counter, why not per-username, 429, in-memory vs Redis trade-off |
 | [18](18_backend_architecture.html) | **Backend Architecture** 🗺️ | Package-by-feature, layered Resource/Service/Repository, constructor DI, request lifecycle, invariants, async/eventing — overview of notes 01–17 |
 | [19](19_react_architecture.html) | **React Architecture** 🗺️ | Server vs client state, TanStack Query hooks, single fetch layer, Context + custom hooks, route guards, the legitimate `useEffect` (SSE), TS guardrails |
+| [20](20_kafka_wallet_event_stream.html) | **Kafka Wallet Event Stream** 📨 | Phase F1: CDI→Kafka producer, partition key ⇄ per-wallet ordering, unique group.id = broadcast SSE, the dual-write gap (deferred to F2), SmallRye messaging, KRaft Dev Services |
 
-> 🔑 = Phase E (auth). 🗺️ = architecture overviews. Notes 16–19 are HTML — open them in a browser.
+> 🔑 = Phase E (auth). 🗺️ = architecture overviews. 📨 = Phase F (Kafka). Notes 16–20 are HTML — open them in a browser.
 
 ## How These Topics Connect
 
