@@ -47,3 +47,6 @@ logs/
 
 # Docker
 postgres_data/
+
+# Local MCP server config (machine-specific paths + local DB creds)
+.mcp.json
